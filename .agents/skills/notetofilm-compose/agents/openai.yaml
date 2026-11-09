@@ -1,0 +1,4 @@
+interface:
+  display_name: "视频剪辑与合成"
+  short_description: "按有效素材安排剪辑、文字和声音后期，合成并验收可播放的完整视频"
+  default_prompt: "使用 $notetofilm-compose，按已选图音素材合成完整视频。"

@@ -9,3 +9,8 @@ __pycache__/
 .env.*
 !.env.example
 .pytest_cache/
+
+# 项目技能随仓库管理，其他本机 Agent 配置仍忽略
+!.agents/
+.agents/*
+!.agents/skills/

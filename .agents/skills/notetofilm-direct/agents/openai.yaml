@@ -1,0 +1,4 @@
+interface:
+  display_name: "视频方案与分镜"
+  short_description: "比较视频制作路线，组织叙事、视觉语言与逐镜音画安排，形成可制作方案"
+  default_prompt: "使用 $notetofilm-direct，根据材料选择叙事与制作路线，并设计逐镜音画安排。"
