@@ -10,256 +10,133 @@ suggested_hardware: cpu-basic
 short_description: Turn scripts into narrated picture videos
 ---
 
-# NoteToFilm · 出口成片
+# NoteToFilm · CLI 与 Skill 制片工具
 
-> Turn scripts into narrated picture videos. 文稿变视频，图音先过审。
+用一个 Agent 和七个 Skill 整理材料、设计分镜、制作图片／视频／配音，再通过 `ntf` 完成剪辑、字幕、声音后期与 MP4 交付。项目、素材和历史成片保存在本机；图像、视频和 Edge TTS 按配置访问外部服务。
 
-自托管的静态图＋旁白视频工具：**提交文稿 → 确认完整分镜计划 → 生成图音 → 逐镜复核当前版本 → 合成 MP4**。
+当前优先开发 CLI＋Skill。完整运行代码位于 `runtime/notetofilm_local/`，七个 Skill 的唯一源码位于 `.agents/skills/`。CLI 软件版本为 **0.2.1**，制作项目 schema 保持 **1**。Web 工作台的部署说明保留在仓库的 `WEB.md`，本轮不开发 Web 功能。
 
-FastAPI、SQLite、本地文件与 FFmpeg；单容器、单应用进程，无需本地 GPU。LLM、生图和配音会访问外部服务，**自托管不等于内容不出网**。
+## 从仓库运行
 
-## 当前架构与保障
+需要 Python 3.11+，媒体处理需要 FFmpeg 和 ffprobe。已有包含所需依赖的 Python 环境可以直接复用：
 
-- 分镜计划及所有分镜先持久化，图音生成失败不会把已完成前缀误认为完整任务。
-- 提交后先停在「待确认分镜」。只有人工确认镜数与文稿内容后，才生成图片和配音。
-- 提交时可同时给出用途、受众、重点和目标时长。这些只改变分镜组织和旁白预算，不改变生图请求；画面仍要求不出现文字。未填写时保持原来的分镜方式。
-- 工作台默认只需文稿；补充制作要求用开关展开，四项仍需一起填写。分镜页可导入任务内 PNG/JPEG，并为每镜选择生成画面或已有图片；全部使用已有图片时不请求生图。
-- 生成画面可选择一张任务内图片作固定参考。管理员将图片参考协议设为 `openai-images-edit` 后，新任务会用 Images Edit multipart 请求；旧任务默认不启用，不会把参考图误发给纯文生图接口。
-- 生成画面还可引用排序更早的稳定镜头。执行到当前镜头时才读取上游实际成图并冻结素材摘要；上游重做后，直接依赖镜头会回到待生成并失效确认，不会静默沿用旧参考，也不会自动扩大重做范围。
-- 保存分镜会保留未修改图片的素材标识和确认；换用已有图片后需重新确认。生成全部缺失素材时，预计请求数包含参考链中将失效的镜头，并在开始前校验任务额度。
-- 确认分镜后可以只预演第一镜，或生成全部缺失素材。生成过程中可以在当前请求完成后暂停；复核页可以连续播放已有草稿，并在保存前看到某一镜会重做图片、配音，还是两者都保留。修改影响由服务端统一判定（`POST /api/v1/tasks/{id}/plan/impact` 只读预演），前端只负责请求与展示。
-- 连续预览保留完整镜头顺序，按成片画幅与适配方式显示，支持上一镜、下一镜、镜头跳转、时间位置和定位编辑；缺图、缺音或素材版本变化时暂停并提示。单镜草稿绑定开始编辑时的分镜版本，其他页面更新后需重新编辑，不能用旧草稿覆盖新内容。
-- 任务操作在 SQLite `BEGIN IMMEDIATE` 事务内认领；去重、状态检查及容量判断不可被并发请求穿过。
-- 一个任务同时只执行一个修改操作；生成、重做、恢复、合成共用容量上限，渲染另有较小上限。
-- 素材生成由进程内调度器派发：全服务生图并发 `image_concurrency`（默认 1）、配音 `audio_concurrency`（默认 2）、单任务图音合计在途 `task_inflight`（默认 3），所有生成入口共用。同操作内生图作业依赖其前镜作业，下游只在上游持久发布后认领。一个作业失败后本操作停止新认领、在途作业收尾并保留成功素材；其他任务不受影响。进度按持久作业状态展示（`progress.jobs` 的在途列表与完成计数；`stage`/`scene_index` 取第一个在途作业以兼容旧客户端）。
-- 有界线程池执行；运行状态保存在数据库。停机停止新请求，取消运行中的外部请求与渲染进程组；重启不自动重发外部请求，而是标为中断，人工恢复。
-- 同一数据目录持有进程锁，第二个应用进程启动失败。**不支持多 worker 或多副本共享数据目录。**
-- 图音素材按操作保存独立版本；临时生成、媒体校验成功后再发布。确认绑定版本，旧页面不能确认新素材。
-- 占位图不能通过图文复核、不能合成；配音复核不受占位图影响。处理中禁止确认、重做和合成冲突操作。
-- 合成冻结素材版本及 SHA-256，并记录稳定镜头 ID、图片素材 ID 和实际参考摘要。每次合成使用独立目录，经过视频校验后写入完成标记，再发布下载地址。
-- 恢复会核对完整计划、素材状态和完成标记。缺失或结果未知的付费图片请求必须再次确认；已有成功素材不重复生成。
-- 没有自动重试付费请求。上游超时可能已计费，人工重试仍可能产生第二次费用。每任务生图请求数有硬上限，失败和未知请求也计入，页面显示已发起次数（不是实际账单）。
-- 未完成、闲置且已有完整计划的任务可独立编辑旁白和画面描述：旁白变化仅重做配音，画面变化仅重做图片，其余素材与确认保留。分镜标识在编辑和重排时保持稳定，过期版本不能确认其他镜头的素材；归档不删除文件。
-- 任务支持 `16:9` 横屏与 `9:16` 竖屏，以及完整保留补白／居中裁切铺满。复核页按成片画幅预览，并显示实际返回图片尺寸；调整画幅保留原图、要求重新确认，不自动重做图片。
-- 生成时显示当前镜头、图片与配音就绪数量、当前步骤和本次操作用时；进度只统计实际完成的素材，不估算剩余时间。
-- 聊天与生图可分别配置网关；外部 HTTP 在隔离子进程内执行，总超时会终止进程，不仅依赖 socket 空闲超时。图片下载拒绝重定向和私网地址。
-- 主机名白名单、跨站写入限制、登录尝试上限和 CSP；磁盘空间不足时拒绝新操作。
+```bash
+python3 scripts/ntf.py --help
+python3 scripts/ntf.py install-info
+```
 
-普通访客无需登录，任务按签名 HttpOnly Cookie 隔离；只有管理员登录后可编辑配置和查看全部任务。没有账号注册、跨设备恢复或用户费用结算，**仍不是完整的公网多租户平台**。全局额度只是有限防护，公开服务仍应配合上游费用预算、反向代理限流和滥用监控。
-
-## 本地启动
-
-需要 Python 3.11、ffmpeg/ffprobe（含 libx264）。进程锁和子进程管理支持 Linux/macOS；Windows 请使用 Linux 容器或 WSL。
+如需建立专用开发环境：
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-mkdir -p config data
-cp -n config.example.toml config/config.toml
-chmod 600 config/config.toml
-# 编辑 config/config.toml，填写 server.admin_token、模型网关和 credentials。
-.venv/bin/uvicorn app.app:app --host 127.0.0.1 --port 8765 --no-proxy-headers
+.venv/bin/python -m pip install -e '.[audio,render]'
+.venv/bin/python scripts/ntf.py install-info --require-audio --require-render
 ```
 
-打开 http://127.0.0.1:8765 即可使用。访客任务绑定当前浏览器 Cookie，30 天到期、清除 Cookie 或更换设备后无法找回；管理员仍可查看。`/admin` 提供配置管理，管理员通过 POST 登录与 12 小时签名 HttpOnly Cookie 访问；API 管理员也可用 `X-Access-Token`，不接受 URL token。
+`audio` 提供 Edge TTS；`render` 提供 Pillow，用于图层动效和文字渲染。JSON／TOML 配置使用标准库；读取 YAML 时增加 `yaml` 可选依赖。基础命令不要求安装 Web 的 FastAPI、Uvicorn 或 Hugging Face 客户端。
 
-本机演示可在文件中设置 `server.local_only = true` 并留空管理员令牌。此模式只接受回环请求、只开放访客功能；远程部署需要管理员令牌。未配置模型网关时，分镜按空行分段，图片生成纯色占位，配音仍访问 edge-tts。全部选用已导入图片时不请求生图，仍需可用的配音服务。
+离开仓库执行时传入 `scripts/ntf.py` 的绝对路径。后文 `ntf` 表示这一源码入口或安装器返回的命令。
 
-## Docker
+## 先合成一条离线样片
 
-先按上节准备完整的 `config/config.toml`，然后运行：
+在具备媒体依赖的环境中，从仓库根目录执行：
 
 ```bash
-docker compose config --quiet
-docker compose up -d --build
+python3 examples/create_media_fixture.py --output /path/to/new-demo --render
+python3 scripts/ntf.py inspect /path/to/new-demo/output/video.mp4 --decode --expect-width 640 --expect-height 360 --expect-fps 15 --expect-duration 4.6 --expect-audio yes
 ```
 
-Compose 分别挂载 `./config:/svc/config` 和 `./data:/svc/data`，无需业务环境变量或 `.env`。配置内默认 `storage.work_dir = "../data"`，相对于配置文件目录解析。默认只发布到 `127.0.0.1:8765`；HTTPS 反向代理部署时在文件中设置 `server.cookie_secure = true` 并把实际域名加入 `server.allowed_hosts`。
+输出约 4.6 秒的 H.264／AAC 视频，包含图片与视频混排、裁剪、末帧延长、旁挂字幕和四种声音策略。素材来自程序生成的图案和测试音，整个示例不调用模型或配音服务。每次选择新目录；字幕烧录与详细输出见 [离线媒体示例](examples/MEDIA_FIXTURE.md)。
 
-容器使用 UID/GID `1000:1000`，Linux 主机应为两个目录设置对应写权限；已有内容先备份再调整权限。镜像构建运行离线回归和真实 FFmpeg 测试。`/healthz` 提供健康检查，应用保持单进程。
+## 使用七个 Skill
 
-## Hugging Face Docker Space
+在本仓库中，支持项目技能的客户端可从 `.agents/skills/` 发现入口。可以直接交给 Agent：
 
-使用同一 Dockerfile、CPU Basic 和单副本。`Protected` 只隐藏源码，应用接口仍按访客或管理员权限访问。Space 内嵌页提供新窗口入口，业务页使用第一方 Cookie。HF 注入的 `SPACE_HOST` 自动加入允许域名并启用 Secure Cookie。
+> 使用 notetofilm-workflow，把这些材料做成横版讲解视频。整理来源，设计正式分镜，优先复用已有素材，按需要制作图像、视频片段与旁白，最后输出 MP4 和审阅页。
 
-新部署使用两个**私有 bucket**：
-
-| 存储 | 内容与用途 |
+| Skill | 负责的工作 |
 |---|---|
-| config bucket | `config.toml` 和 `config.previous.toml`；包含管理员令牌、模型与 HF 访问密钥、网关、模型参数、额度及运行设置的完整明文配置 |
-| data bucket | SQLite 一致性快照、任务与所有者、请求额度、版本化图音、已发布成片和清单；对象按 SHA-256 去重 |
-| 容器本地 `work_dir` | SQLite 运行库、素材工作副本、FFmpeg 临时文件；重建后从 data bucket 恢复 |
+| `notetofilm-workflow` | 阶段、依赖、局部修改和中断后继续 |
+| `notetofilm-prepare` | 材料、来源、原图和制作目标 |
+| `notetofilm-direct` | 叙事、制作路线、画风、正式旁白和分镜 |
+| `notetofilm-image` | 生图、参考编辑、图片复用与采用 |
+| `notetofilm-video` | 视频片段提交、查询、下载与选片 |
+| `notetofilm-audio` | Edge TTS、读法、实际时长和字幕边界 |
+| `notetofilm-compose` | 动效、剪辑、文字与声音后期、成片检查和审阅 |
 
-创建 bucket 后，将完整配置上传到 config bucket。文件中的 `storage.config_bucket`、`storage.data_bucket` 填写各自的 `namespace/name`，`storage.hf_token` 填写有权读写这两个私有 bucket 的凭据，`storage.work_dir` 使用 `/svc/data`。真实文件只保存在私有位置，仓库只包含无密钥的示例。
+一个 Agent 可以按需依次读取各技能。只做生图、配音或现有素材合成时，可以直接进入对应 Skill。职责与资料归属见 [技能布局](docs/skill-layout.md)。
 
-以下命令用于新 Space；`volumes set` 会替换挂载列表，已有 Space 需要保留其原有挂载：
+## 安装到其他客户端
 
-```bash
-hf buckets create username/notetofilm-config --private
-hf buckets create username/notetofilm-data --private
-hf buckets cp config/config.toml hf://buckets/username/notetofilm-config/config.toml
-hf spaces volumes set username/notetofilm \
-  -v hf://buckets/username/notetofilm-config:/mnt/notetofilm-config:ro
-```
-
-应用从 `/mnt/notetofilm-config/config.toml` 取得存储连接信息，随后通过官方客户端直接读写 config bucket，并确认远端保存结果。data bucket 同样通过客户端保存快照，无需挂载；SQLite 始终运行在本地目录。配置文件包含完整参数，运行时不再读取模型、密钥或额度环境变量。`NOTETOFILM_CONFIG_FILE` 仅用于选择非默认文件路径；`SPACE_HOST` 属于平台提供的访问域名。
-
-bucket 不可访问、恢复校验失败或写入未确认时停止启动或返回 503；运行中发生持久化故障后暂停新增操作，检查配置和网络后重启恢复。模型请求前先确认额度与操作状态已保存。单实例仍是必要条件：不同容器没有共享进程锁，不支持两个实例同时写入同一 data bucket。
-
-### 从旧环境配置迁移
-
-本地部署可以在**旧环境变量仍可读取**的终端执行一次导入：
+在源码根目录运行，目标路径由使用者选择，且与源码目录分开：
 
 ```bash
-.venv/bin/python scripts/migrate_config.py --data-dir data --output config/config.toml
+python3 scripts/install.py \
+  --skills-dir /path/to/client/skills \
+  --runtime-dir /path/to/notetofilm-runtime \
+  --with-audio --with-render
 ```
 
-目标文件必须不存在。导入读取旧 `data/config.toml` 的模型设置及现有环境中的密钥、管理员令牌、额度；保留旧配置和全部任务文件。停止旧进程后使用完整配置启动。已有完整文件时，旧业务环境变量会被忽略；无须为切换配置方式轮换任何密钥。继续显式使用旧 `VIDEO_DATA_DIR` 且没有独立配置文件的启动脚本仍走兼容模式；要迁移应指定或创建完整配置文件。
+安装器为运行包建立独立 Python 环境，复制七个 Skill，并在每个 Skill 的 `references/runtime.md` 开头记录实际命令与同套件技能的位置。使用输出的 `ntf_command` 运行；安装后源码可移走。客户端按自身要求重新加载技能。
 
-旧 HF Secrets 无法回读时，可先向私有 config bucket 放入一次性引导文件：
+省略 `--with-audio --with-render` 时，基础安装不下载依赖，仍可处理现有媒体；联网配音、图层动效及 Pillow 文字处理需相应依赖。只安装命令时改用 `--runtime-only`，省略 `--skills-dir`。
 
-```toml
-bootstrap_from_environment = true
+相同路径更新整套工具与技能时增加 `--upgrade`，只替换属于本安装器的目录。已有 runtime-only 安装可使用 `--runtime-only --upgrade --code-only` 只更新代码，复用解释器和依赖；启动检查失败时恢复旧包。
 
-[storage]
-work_dir = "/svc/data"
-local_backup_dir = ""
-config_bucket = "username/notetofilm-config"
-data_bucket = "username/notetofilm-data"
-hf_token = "<仅在私有文件中填写实际凭据>"
+## 配置图像与视频通道
+
+```bash
+ntf config-init /path/to/routes.json
+ntf routes --config /path/to/routes.json
 ```
 
-首次新版本启动会在容器内读取现有环境，将引导文件替换为完整配置；后续启动直接读取完整文件。**此步骤只迁移配置，不会把已消失的旧容器临时盘带回。** 旧 HF 临时盘部署必须先取得完整数据库和媒体备份，再进行会重建容器的升级或挂载变更。仅下载视频或导出模型 TOML 不足以恢复任务、所有者和额度。
+初始文件包含六条待配置路由；需要按实际网关确认地址、认证、模型、协议和能力后使用。`configs/` 提供通用结构及协议样例。协议和能力由配置声明，支持 `openai-images`、`ark-video`、`newapi-video`、`gemini-veo`；各模型实际可用模式取决于所选服务。
 
-## 配置
+路由引用环境变量中的凭据，也可通过 `--connections-file /path/to/connections.private.json` 只读绑定已有私有连接。实际连接、密钥、业务材料和生成媒体放在源码之外。请求、模式及失败处理见 [通道配置说明](docs/company-protocols.md)。
 
-完整示例见 [config.example.toml](config.example.toml)，所有字段均有默认值或空值占位。文件路径按 `NOTETOFILM_CONFIG_FILE`、HF 默认挂载、仓库 `config/config.toml` 的顺序选择。已有文件格式错误时启动失败，不退回环境变量覆盖它。
+提交结果不明时先检查动作状态；已取得任务 ID 时继续原任务查询与下载。`--retry` 明确创建新尝试，`--force` 明确重做已完成动作，两者都可能产生新费用。
 
-| 分节 | 主要内容 |
+## 制作项目与修改
+
+| 文件或目录 | 内容 |
 |---|---|
-| `server` | 管理员令牌、本机模式、Cookie、允许域名、通知 webhook |
-| `storage` | 本地运行目录、可选本地快照目录、两个私有 bucket、HF 访问密钥 |
-| `credentials` | `shared`、`llm`、`image` 三个明文模型密钥条目 |
-| `limits` | 并发（含 `image_concurrency` / `audio_concurrency` / `task_inflight`）、请求体、场景数、素材尺寸、时长、磁盘下限、每日调用额度 |
-| `llm` / `image` | 网关、模型、接口协议及 `credential_ref`；引用上述三个密钥条目之一 |
-| `tts` | `edge-tts` 与音色，默认 `zh-CN-YunxiNeural` |
+| `project.json` | 制作说明、声音、画幅和默认路由 |
+| `sources/`、`materials.md` | 原始资料、来源索引与可讲事实 |
+| `storyboard.json` | 唯一正式分镜；`views/` 提供阅读版 |
+| `workflow.json` | 当前动作及依赖 |
+| `state.json` | 已执行尝试、素材、采用关系和状态 |
+| `assets/` | 实际取得的图像、视频与音频 |
+| `renders/` | 各版成片、清单和时间表 |
 
-本地可选 `storage.local_backup_dir` 作为独立持久目录，使用与 bucket 相同的快照协议；它与 `data_bucket` 二选一，且不得位于 `work_dir` 内。完整配置始终放在运行目录之外，任务快照只保存模型参数和密钥引用。
+Agent 维护材料与正式分镜；运行代码执行计划并登记实际结果。更改分镜后重新 `ntf plan`，再用 `ntf ready`／`ntf status` 查看受影响动作。只修改旁白时保留可复用画面；新候选与新成片保留旧版本。同一项目的写状态命令串行执行，远端已提交任务可以并行处理。
 
-兼容范围是 **Chat Completions / Responses 文本分镜＋Images generations**。`[llm].wire_api="chat"` 调用 `/chat/completions`；`"responses"` 调用 `/responses`，使用非流式请求、`store=false`，从完成响应的 assistant `output_text` 内容提取完整分镜，跳过推理项并拒绝未完成、拒绝或无文本结果。Responses 分支不强加 `temperature`；不自动切换协议或重试模型调用。旧 TOML 与历史任务快照省略 `wire_api` 时继续使用 `chat`。
+支持按现有图音直接合成、图片与视频混排、图层关键帧、裁切与变速、跨镜转场、字幕配字、背景轨、混音、双遍响度校准和审阅页。内容事实、动作连续性、节奏与观看效果在导演及审片阶段核对。
 
-聊天与生图可以共用 `credentials.shared`，也可分别配置网关及密钥条目；Images 必须支持配置的模型、尺寸及所选 `quality`（默认 low），并返回 base64 或 HTTPS 图片地址。请求使用 `NoteToFilm/1.0` 客户端标识。适配层在 `app/providers.py`，兼容并不代表所有网关接受全部参数。管理员表单与高级 TOML 编辑器共用配置，支持分别设置网关、协议、模型、尺寸、质量、超时和音色；Bearer token 从完整文件的 `credentials` 分节按引用解析。
-
-分镜模型输出 `[{"narration":"旁白","visual_prompt":"具体画面描述"}]`，同时兼容旧字符串数组；未配置 LLM 时仍按空行分段，并先以旁白填充画面描述供用户修改。单镜画面描述上限为 4000 字符，旁白继续使用现有长度限制。生图只使用统一风格、任务画幅和画面描述，配音只使用旁白。请求图片尺寸仍以模型配置为准；实际返回比例不符时，由预览与合成按任务的适配方式处理。
-
-配音依赖固定为 edge-tts 7.2.8。2026-10 的旧合成入口返回 403，应用在 `app/tts_compat.py` 为该版本使用微软 `api.msedgeservices.com` 合成入口，音色列表保留原入口；参考上游 [修复提案 #491](https://github.com/rany2/edge-tts/pull/491)。该提案尚未合并，不代表已发布修复；升级到包含修复的正式版本后应移除此兼容处理。配音仍需在部署所在网络实际验证。
-
-## API 优先架构
-
-全部业务接口统一为 `/api/v1`，前端只请求 API，不依赖服务端模板注入。任务、图音审批、合成、文件下载、访客会话、管理员登录和配置导出均可脱离页面调用。异步操作返回 202 与状态查询地址，错误统一带请求编号，响应 schema 不暴露内部配置及文件路径。
-
-接口列表与接入说明见 [API.md](API.md)；运行后的 `/api-docs` 是只读文档页，`/api/v1/openapi.json` 可生成客户端。前后端可以同容器提供，也可由同源反向代理分别托管，不引入微服务或放宽跨站写入。旧 `/api/*` 与 `/files/*` 接口已移除，部署需同时更新前端。
-
-## 工作台与成片
-
-工作台并列展示文稿输入与任务列表，任务摘要取首镜旁白或原稿前 60 字。任务页按分镜确认、图音复核、处理中、失败/中断及完成状态显示当前动作；分镜修改未保存时禁止生成，草稿暂存在当前标签页的 sessionStorage，刷新后恢复且仍检查原版本，不自动覆盖服务端修改。图音生成后可返回编辑分镜，保存后再次确认生成，只补齐缺失素材。配音就绪后显示各镜实际时长、总时长与上限，超限时按时长列出可定位修改的镜头，并禁止合成；服务端也会在认领渲染额度前拒绝已知超限。旧素材未记录时长时仍在实际编码前校验。完成后可直接播放视频，或使用独立下载接口保存 MP4。
-
-页面不使用浏览器原生确认框或离开页面弹窗。「确认分镜，生成图音」按页面列出的数量直接执行；重做图片、需再次授权的恢复、归档及丢弃草稿使用页面内确认按钮，可取消。完整配置的草稿只保留在页面内存中，避免把新输入的密钥存入浏览器持久存储；保存、退出或关闭页面后清除。
-
-所有页面共用明暗主题。优先使用已保存偏好，否则跟随系统；主题开关可随时切换。手机端按内容顺序排列，不提供与实际任务无关的占位预览。
-
-## 管理员配置面板
-
-`/admin` 提供模型与密钥表单、高级完整 TOML、校验、保存、恢复上一版和导出。直接编辑 TOML 后可先校验再保存，保存后表单重载；表单编辑会规范化格式并去除注释。
-
-- 普通读取与校验把密钥、管理员令牌、webhook、HF token 显示为 `__UNCHANGED__`。保留该值沿用现有内容，填新值替换，清空移除；只有明确执行完整导出才返回全部明文。
-- 网关使用不含凭据和查询参数的 HTTPS 443 地址。更换网关或密钥条目时，需确认新绑定有权接收所选密钥与文稿。
-- 保存检查版本冲突，先备份上一版，再保存并回读确认。外部改动不会被旧页面覆盖；写入失败后需检查存储并重启。
-- 模型参数用于新任务；旧任务保留自己的模型、地址和音色。密钥更新用于后续请求。移除密钥后，已有视频下载与本地合成仍可用，需要模型的操作返回缺少凭据错误。
-- `server`、`limits`、`storage` 变更在保存后显示需重启。更换 bucket 或运行目录前，应停机迁移并验证对应配置和数据快照；单纯修改名称不会复制存量数据。
-- 校验、保存和恢复配置不调用模型。旧版只含模型三节的 API 写入仍被接受，会保留完整文件中的密钥与运行设置。
-
-## 公开使用额度
-
-SQLite 事务内按 UTC 日计数；失败、未知请求也计入。不是金额预算，也不是防机器人系统。管理员与所有访客共享全局额度，归档和换 Cookie 不解除全局额度。
-
-| `limits` 配置键 | 默认上限 / UTC 日 |
-|---|---|
-| `max_daily_tasks` | 全服务 20 个新任务 |
-| `max_visitor_tasks` | 每个访客 5 个新任务 |
-| `max_daily_llm` | 全服务 40 次分镜模型请求 |
-| `max_daily_images` | 全服务 60 次生图请求 |
-| `max_daily_audio` | 全服务 120 次配音请求 |
-| `max_daily_renders` | 全服务 30 次合成操作 |
-
-额度在实际请求前认领，中途耗尽会停止任务并保留已完成素材。任务的单独上限、总并发和磁盘限制仍然生效。历史无所有者任务迁移为管理员所有，不公开给访客。
-
-## 代码结构
-
-```text
-app/app.py          服务生命周期、安全中间件与静态前端入口
-app/api.py          API v1 路由、鉴权依赖与文件出口
-app/schemas.py      请求/响应契约与 OpenAPI schema
-app/config.py       运行设置与旧环境兼容入口
-app/full_config.py  完整配置、一次性导入、遮蔽与远端保存
-app/persistence.py  私有 bucket 客户端、SQLite 快照与恢复
-app/model_config.py TOML 校验、原子写入、热应用与任务快照
-app/auth.py         匿名访客 Cookie 与任务身份
-app/db.py           数据迁移、事务、单进程锁、启动恢复
-app/domain/         分镜影响、参考关系与作业依赖图的纯规则（无 I/O）
-app/jobs.py         素材生成作业：条件认领、输入快照与状态转换
-app/scheduler.py    进程内素材调度器：全服务图音并发与任务在途上限
-app/tasks.py        完整计划、原子认领、任务编排、版本复核
-app/providers.py    LLM、图片、TTS、通知接口
-app/render.py       媒体验证、冻结清单、合成尝试及完成核验
-app/templates/     页面
-app/static/        CSS 与原生 JavaScript
-tests/             离线回归、HTTP 与 FFmpeg 测试
-vendor/compose_video.py  独立 manifest 渲染引擎
-```
-
-没有 Redis、Celery、Dify、React 或额外审批服务。
-
-## 数据、恢复与升级
-
-`tasks.db` 保存完整计划及操作状态；`data/{id}/assets/{operation}/` 保存版本化图音；`renders/{operation}/` 保存冻结清单、分镜 manifest、视频、构建报告及 `complete.json` 完成标记。文件出口只提供当前素材和已发布成片，不开放数据库、过程文件及失败半成品。
-
-恢复规则：
-
-- 完整计划存在：保留成功素材，仅处理缺失/失败项；未知生图必须人工确认。
-- 合成已完成但状态尚未落库：核对完成标记、文件哈希、当前素材版本及媒体有效性后恢复完成。
-- 半成品没有有效完成标记：不视为成片；可在新的 attempt 目录重新合成，旧目录不覆盖。
-- 旧版库没有完整计划：非完成任务标为中断，恢复前要求确认重新规划，**不把旧镜头前缀当完整任务**。旧文件不删除。旧版本已标记完成的成片会重新检查构建报告、媒体流与时长，通过后继续提供下载；不通过则标为中断并保留原文件，不能只凭文件存在认定完成。
-
-生图重做必须携带 `expected_revision` 与 `idempotency_key`，同键同参数重放原受理结果，不再调用供应商；同键不同参数或过期版本返回冲突。台账跨完成/失败/重启保留，不提供通用请求幂等保证。SQLite schema v10 增加素材生成作业表：每次图音生成先登记为持久作业，条件认领（同一操作内每镜每类素材最多一次）、输入快照（只含模型参数、提示与参考摘要，不含凭据）、发布前版本复核，重启时生图记 `unknown`、配音记 `failed`、未派发队列终止。分镜编辑、删镜与重排不删除历史作业。schema v9 增加任务内图片素材登记与每镜图片来源；旧分镜默认文生图并保留原有素材。迁移不删除任务或媒体，前后端应同步升级。合成记录包含画幅与适配方式；素材清单 v2 记录稳定镜头 ID、图片素材 ID 和实际参考摘要。恢复同时支持原列表清单及 v2 清单，旧记录按原有字段核对。
-
-归档只改变任务状态，不释放磁盘。磁盘不足时由管理员先备份再清理或迁移存储；本程序不自动删除历史素材。
-
-接入快照存储后，每次数据库写入先在本地提交，通过 SQLite backup API 生成一致性副本，再上传数据库、已发布图音和成片；不可变对象完成后，最后发布 `latest.json`。启动先下载并校验全部文件摘要与数据库，再恢复运行目录。未发布的快照和 `.part` 文件不会作为恢复源，旧版图音保留。写入失联后保留本地文件并停止新操作；恢复使用最后确认的快照，结果未知的生图仍要求人工确认。快照按内容去重，旧对象暂不自动清理，需要监测 bucket 容量。
-
-**升级前停服务并备份完整配置与整个 data 目录，或核验最新远端快照可恢复。** 数据库迁移后不建议直接降级；回退应使用完整的迁移前备份。重启恢复不会自动发起付费调用。当前不自动清理历史素材和失败尝试，管理员需要监控磁盘并安排停机备份与人工归档。
-
-## 验证
-
-在仓库根目录运行：
+## 开发、验证与打包
 
 ```bash
-.venv/bin/python -B scripts/check_tests.py
-node --test tests/test_review_helpers.mjs
+python3 -m pip install -e '.[audio,render,test]'
+python3 scripts/check_cli.py
+python3 scripts/package.py --output /path/outside/repository/notetofilm-local-0.2.1.zip
 ```
 
-测试包含实际请求体限额/读取超时、并发去重/容量、持久生图重做幂等、过期版本确认、部分失败恢复、密钥迁移后的历史读取、启动中断、旧库迁移、HTTP 鉴权、跨站写入、真实本地 FFmpeg 合成与损坏产物拒绝。模型和 TTS 均使用测试替身；FFmpeg 测试仅在本地生成颜色图与正弦波，不包含外部素材。严格入口要求 FFmpeg/ffprobe 与编码器存在、测试数量大于零且无 skipped；缺少媒体工具不能算通过。普通 unittest discover 仍可用于诊断，但它可能跳过媒体测试。
+严格入口要求测试数大于零、无失败且无跳过，包含真实本地媒体处理、协议与恢复测试，以及从源码包安装七个 Skill 和真实 CLI、移走源码后再合成与检查的验证。模型与 TTS 使用测试替身。
 
-`.github/workflows/tests.yml` 对 push/PR 执行同一严格回归、前端语法检查与生产镜像构建；Dockerfile 也使用严格入口。工作流不读取生产 Secrets。运行结果以相应提交的 Actions 记录为准，配置存在不等于已运行。
+公共说明只在 `shared/` 修改，再运行：
 
-请求体中间件在业务处理前累计实际读取字节，拒绝冲突/重复的消息定界头；限额内的分块 JSON 可以使用。反向代理仍应独立配置请求体上限、读取超时和限流；应用测试不代表所有公网代理链已验收。
+```bash
+python3 scripts/sync_skill_references.py --write
+python3 scripts/sync_skill_references.py --check
+```
 
-## 已知边界
+分发器按 CLI 组件清单收集运行包、技能、配置样例、示例生成器、文档和测试。ZIP 与 tar.gz 都保留仓库布局；不复制 Web 应用、已安装环境、制作项目或 `local/`。解压后从其中的 `README.md` 开始。
 
-- 模型是否忠实覆盖原稿仍需用户在分镜确认页核对；数量和长度校验无法证明语义完整。
-- 支持独立编辑旁白与画面描述、复用未改动素材，以及按输出画幅连续预览。已完成任务可“修改为新版本”，旧 MP4 保留下载；“复制为新草稿”会复制原文、旁白、画面描述和制作要求，图片与参考需重新选择。当前未提供完整项目状态回滚或拖拽时间线编辑。
-- 2fps 低成本合成存在帧边界舍入；真实播放效果和换镜节奏需要业务验收。
-- 访客 Cookie 不是实名身份；清 Cookie 可绕过单访客额度，但不能绕过持久数据库中的全局额度。额度耗尽可造成他人无法使用；未接入持久化时临时盘丢失会重置计数，接入后计数随数据库恢复。
-- 完整配置中的明文密钥仅供管理员管理；网关错误不把原始响应写给用户。已分类的 HTTP 状态、超时、配音及媒体错误提供固定处理建议；日志记录任务/操作编号和安全错误码，未知异常仍只记录类型，不输出原始响应、地址或凭据。
-- edge-tts 没有企业 SLA，文本会发往微软端点；网关配置不代表模型处理一定在内网。
-- LICENSE 暂未添加，默认保留所有权利，沿用当前发布决定。
+Web 的既有回归仍由 `scripts/check_tests.py` 执行，CI 分别检查两套入口。
+
+## 当前边界
+
+- 自动化检查覆盖协议处理、项目状态与媒体技术规格；真实服务连通性及内容质量需要按实际环境验收。
+- Edge TTS 需要联网，服务返回时间边界后才能生成对应字幕；缺少边界时保留缺项。
+- 复杂摄影动作与人物／设备连续性由素材及生成服务承担，按镜头选择参考与可用区间。
+- 当前没有拖拽时间线、跨设备账号或集中调度服务；本地项目状态由 CLI 管理。
+- 仓库暂未添加 LICENSE，沿用当前权利状态。

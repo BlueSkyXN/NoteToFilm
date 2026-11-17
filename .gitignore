@@ -9,6 +9,22 @@ __pycache__/
 .env.*
 !.env.example
 .pytest_cache/
+*.egg-info/
+build/
+dist/
+!runtime/notetofilm_local/data/
+!runtime/notetofilm_local/data/models.json
+**/*.private.*
+**/*.local.*
+**/private/
+**/secrets/
+**/credentials/
+**/credentials.json
+**/secrets.json
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
 
 # 项目技能随仓库管理，其他本机 Agent 配置仍忽略
 !.agents/
