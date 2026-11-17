@@ -5,6 +5,8 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -15,6 +17,7 @@ from notetofilm_local.capabilities import check_request, request_parameters
 from notetofilm_local.config import default_config, list_routes, load_config, resolve_route
 from notetofilm_local.errors import NTFError
 
+ROOT = Path(__file__).resolve().parents[2]
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==")
 VIDEO_CONTAINER_FIXTURE = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"  # header fixture, not a real video
 
@@ -77,18 +80,26 @@ class ProtocolTests(unittest.TestCase):
         self.assertNotIn("fixture-secret-never-output", str(error.exception.as_dict()))
         return error.exception
 
-    def test_six_exact_models_default_unconfirmed_and_no_inference(self):
+    def test_seven_exact_models_default_unconfirmed_and_no_inference(self):
         config = default_config()
         self.assertEqual({r["model"] for r in config["routes"].values()}, {
-            "veo-3.1-generate-preview", "doubao-seedance-2-5", "doubao-seedance-2-0-260128",
-            "gpt-image-2.5-sunburst", "gpt-image-2", "gpt-image-2.5-flare"})
-        self.assertEqual(len(list_routes(config)), 6)
+            "veo-3.1-generate-preview", "doubao-seedance-2-5", "doubao-seedance-2-0-fast-260128",
+            "gpt-image-2.6-sunburst", "gpt-image-2.5-sunburst", "gpt-image-2", "gpt-image-2.5-flare"})
+        self.assertEqual(len(list_routes(config)), 7)
         for item in list_routes(config):
             self.assertIsNone(item["adapter"])
             self.assertEqual(item["capability_status"], "unknown")
         selected = resolve_route(config, None, "image")
         self.assert_code("adapter_unconfigured", lambda: get_adapter(selected))
         self.assert_code("capability_unknown", lambda: check_request(selected, {"prompt": "fixture"}))
+
+    def test_config_init_reports_the_routes_it_wrote(self):
+        target = self.root / "routes.json"
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/ntf.py"), "config-init", str(target)],
+                                capture_output=True, text=True, check=True)
+        written = json.loads(target.read_text())
+        self.assertEqual(json.loads(result.stdout)["routes"], len(written["routes"]))
+        self.assertEqual(len(written["routes"]), len(default_config()["routes"]))
 
     def test_route_snapshot_pins_company_url_without_secret_values(self):
         config = default_config()
@@ -142,14 +153,15 @@ class ProtocolTests(unittest.TestCase):
         sent_image, sent_video = image.opener.requests[0], video.opener.requests[0]
         self.assertEqual(sent_image.full_url, "https://cpa.example/gateway/v1/images/generations")
         self.assertEqual(sent_image.get_header("Authorization"), "Bearer fixture-cpa-secret")
-        self.assertEqual(json.loads(sent_image.data)["model"], "gpt-image-2.5-flare")
+        self.assertEqual(json.loads(sent_image.data)["model"], "gpt-image-2.6-sunburst")
         self.assertEqual(sent_video.full_url, "https://uniapi.example/v1/videos")
         self.assertEqual(sent_video.get_header("Authorization"), "Bearer fixture-uniapi-secret")
-        self.assertEqual(json.loads(sent_video.data)["model"], "doubao-seedance-2-0-260128")
+        self.assertEqual(json.loads(sent_video.data)["model"], "doubao-seedance-2-5")
 
     def test_split_profile_flare_and_sunburst_edit_use_multipart_objects(self):
         config = load_config(Path(__file__).resolve().parents[2] / "configs/cpa-uniapi.example.json")
-        for selected,model in (("cpa-image-2-5","gpt-image-2.5-flare"),("cpa-image-2-5-sunburst","gpt-image-2.5-sunburst")):
+        for selected,model in (("cpa-image-2-5","gpt-image-2.5-flare"),("cpa-image-2-5-sunburst","gpt-image-2.5-sunburst"),
+                               ("cpa-image-2-6-sunburst","gpt-image-2.6-sunburst")):
             with self.subTest(model=model), patch.dict(os.environ, {"NTF_CPA_BASE_URL": "https://cpa.example/v1", "NTF_CPA_API_KEY": "fixture-cpa-secret"}):
                 image = get_adapter(resolve_route(config, selected, "image"))
                 image.opener = MockHTTP({"data":[{"b64_json":base64.b64encode(PNG).decode()}]})
@@ -162,9 +174,55 @@ class ProtocolTests(unittest.TestCase):
     def test_split_profile_reference_count_is_experiment_limit_not_inherited(self):
         config = load_config(Path(__file__).resolve().parents[2] / "configs/cpa-uniapi.example.json")
         with patch.dict(os.environ, {"NTF_CPA_BASE_URL": "https://cpa.example/v1", "NTF_CPA_API_KEY": "fixture-cpa-secret"}):
-            image=get_adapter(resolve_route(config,None,"image"));image.opener=MockHTTP()
+            image=get_adapter(resolve_route(config,"cpa-image-2-5","image"));image.opener=MockHTTP()
             self.assert_code("reference_limit",lambda:image.submit({"prompt":"edit","references":[{"path":"a.png"},{"path":"b.png"}]},self.root))
         self.assertEqual(image.opener.requests,[])
+
+    def sunburst26(self, *replies):
+        config = load_config(Path(__file__).resolve().parents[2] / "configs/cpa-uniapi.example.json")
+        with patch.dict(os.environ, {"NTF_CPA_BASE_URL": "https://cpa.example/v1", "NTF_CPA_API_KEY": "fixture-cpa-secret"}):
+            image = get_adapter(resolve_route(config, None, "image"))
+        image.opener = MockHTTP(*replies)
+        return image
+
+    def test_gpt_image_parameters_and_custom_size_rule(self):
+        b64 = base64.b64encode(PNG).decode()
+        image = self.sunburst26({"data": [{"b64_json": b64}, {"b64_json": b64}]})
+        with patch.dict(os.environ, {"NTF_CPA_API_KEY": "fixture-cpa-secret"}):
+            result = image.submit({"prompt": "cut-out object", "parameters": {"size": "1536x864", "quality": "high", "count": 2,
+                                   "background": "transparent", "output_format": "png", "moderation": "low"}}, self.root)
+        body = json.loads(image.opener.requests[0].data)
+        self.assertEqual((body["model"], body["size"], body["n"], body["background"]), ("gpt-image-2.6-sunburst", "1536x864", 2, "transparent"))
+        self.assertEqual(result["returned_count"], 2)
+        for size in ("1000x1000", "3840x1072", "640x640", "4096x2304"):
+            with self.subTest(size=size):
+                self.assert_code("unsupported_parameter", lambda: self.sunburst26().submit({"prompt": "x", "parameters": {"size": size}}, self.root))
+
+    def test_mask_edit_is_sent_with_the_references(self):
+        from PIL import Image
+        import io
+        def png(size, mode="RGB"):
+            buffer = io.BytesIO(); Image.new(mode, size).save(buffer, "PNG"); return buffer.getvalue()
+        (self.root / "base.png").write_bytes(png((64, 48)))
+        (self.root / "mask.png").write_bytes(png((64, 48), "RGBA"))
+        (self.root / "small-mask.png").write_bytes(png((32, 32), "RGBA"))
+        image = self.sunburst26({"data": [{"b64_json": base64.b64encode(PNG).decode()}]})
+        with patch.dict(os.environ, {"NTF_CPA_API_KEY": "fixture-cpa-secret"}):
+            image.submit({"prompt": "add a balloon in the sky", "references": [{"path": "base.png"}, {"path": "a.png"}],
+                          "mask": {"path": "mask.png"}}, self.root)
+        sent = image.opener.requests[0]
+        self.assertEqual(sent.full_url, "https://cpa.example/v1/images/edits")
+        self.assertEqual(sent.data.count(b'name="image[]"'), 2)
+        self.assertIn(b'name="mask"; filename="mask.png"', sent.data)
+        self.assert_code("mask_invalid", lambda: self.sunburst26().submit(
+            {"prompt": "x", "references": [{"path": "base.png"}], "mask": {"path": "small-mask.png"}}, self.root))
+        self.assert_code("mode_inputs", lambda: self.sunburst26().submit({"prompt": "x", "mask": {"path": "mask.png"}}, self.root))
+        older = load_config(Path(__file__).resolve().parents[2] / "configs/cpa-uniapi.example.json")
+        with patch.dict(os.environ, {"NTF_CPA_BASE_URL": "https://cpa.example/v1", "NTF_CPA_API_KEY": "fixture-cpa-secret"}):
+            flare = get_adapter(resolve_route(older, "cpa-image-2-5", "image"))
+        flare.opener = MockHTTP()
+        self.assert_code("capability_unknown", lambda: flare.submit(
+            {"prompt": "x", "references": [{"path": "base.png"}], "mask": {"path": "mask.png"}}, self.root))
 
     def test_additional_header_envs_are_sent_without_primary_auth(self):
         adapter = self.adapter("openai-images", "image", {"data": [{"b64_json": base64.b64encode(PNG).decode()}]})

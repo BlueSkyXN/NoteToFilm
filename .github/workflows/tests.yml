@@ -2,6 +2,7 @@ name: Application regression
 on:
   push:
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -32,7 +33,9 @@ jobs:
         run: python -B scripts/check_cli.py
       - name: Package CLI and Skills
         run: python -B scripts/package.py --output "$RUNNER_TEMP/notetofilm-local.zip"
+  # Web 暂不维护：只在 Actions 页面手动运行本工作流时执行。
   offline-regression:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

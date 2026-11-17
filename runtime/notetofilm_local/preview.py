@@ -119,6 +119,9 @@ def export_preview(project, *, output=None, video=None, render_id=None, timeline
     bundle={'scene_count':len(rows),'movie':'movie.mp4' if movie else None,'scenes':rows,'reused_source_groups':reused}
     atomic_json(directory/'review-data.json',bundle)
     source_cli=Path(__file__).resolve().parents[2]/'scripts/ntf.py'
-    command=[sys.executable,str(source_cli)] if source_cli.is_file() else [sys.executable,'-m','notetofilm_local']
+    if getattr(sys,'frozen',False):
+        command=[sys.executable]
+    else:
+        command=[sys.executable,str(source_cli)] if source_cli.is_file() else [sys.executable,'-m','notetofilm_local']
     return {'page':str(directory/'review.html'),'directory':str(directory),**bundle,
             'serve_argv':command+['serve','--port','0','--directory',str(directory)]}

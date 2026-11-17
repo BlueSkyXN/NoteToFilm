@@ -116,8 +116,8 @@
         }
       }
     },
-    "company-seedance-2-0": {
-      "model": "doubao-seedance-2-0-260128",
+    "company-seedance-2-0-fast": {
+      "model": "doubao-seedance-2-0-fast-260128",
       "modality": "video",
       "connection": "uniapi",
       "adapter": "newapi-video",
@@ -150,7 +150,8 @@
             "actual_duration_seconds": 4.042
           },
           "runtime_connectivity": "not_tested",
-          "other_combinations": "not_individually_tested"
+          "other_combinations": "not_individually_tested",
+          "model_note": "Non-fast doubao-seedance-2-0-260128 returned HTTP 403 for the tested key on 2026-11-17; the fast variant is the current 2.0 ID."
         },
         "modes": {
           "text_to_video": {
@@ -384,6 +385,6 @@
   },
   "defaults": {
     "image_route": "company-image-2",
-    "video_route": "company-seedance-2-0"
+    "video_route": "company-seedance-2-0-fast"
   }
 }

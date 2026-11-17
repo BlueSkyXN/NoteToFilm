@@ -14,6 +14,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 import uuid
 
 from ..capabilities import check_request, request_mode, request_parameters
+from .. import __version__
 from ..errors import NTFError
 from ..http_diagnostics import diagnose_error
 
@@ -78,7 +79,7 @@ def reference_prompt(request: dict) -> str:
     return prompt + ("\n\nReference-image instructions (in submitted order):\n" + "\n".join(notes) if notes else "")
 
 
-def multipart(fields: dict, images: list[tuple[bytes, str]]) -> tuple[bytes, str]:
+def multipart(fields: dict, images: list[tuple[bytes, str]], files: dict | None = None) -> tuple[bytes, str]:
     boundary = "ntf-" + uuid.uuid4().hex
     body = bytearray()
     for key, value in fields.items():
@@ -88,6 +89,11 @@ def multipart(fields: dict, images: list[tuple[bytes, str]]) -> tuple[bytes, str
     for i, (raw, mime) in enumerate(images, 1):
         suffix = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}[mime]
         body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="image[]"; filename="reference-{i}.{suffix}"\r\nContent-Type: {mime}\r\n\r\n'.encode())
+        body.extend(raw)
+        body.extend(b"\r\n")
+    for name, (raw, mime) in (files or {}).items():
+        suffix = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}[mime]
+        body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{name}.{suffix}"\r\nContent-Type: {mime}\r\n\r\n'.encode())
         body.extend(raw)
         body.extend(b"\r\n")
     body.extend(f"--{boundary}--\r\n".encode())
@@ -150,6 +156,9 @@ class BaseAdapter:
         if kind != "none":
             env = auth.get("env")
             secret = os.environ.get(env or "")
+            if not secret and self.connection.get("codex_provider"):
+                from ..config import codex_provider
+                secret = codex_provider(self.connection["codex_provider"])["token"]  # read at request time, never stored
             if not secret:
                 raise NTFError("credential_missing", "The configured credential environment variable is not set.", {"environment_variable": env})
             header = auth.get("header", "Authorization" if kind == "bearer" else None)
@@ -187,7 +196,7 @@ class BaseAdapter:
             same_origin = origin(current) == origin(self.base_url)
             if not download and not same_origin:
                 raise NTFError("endpoint_origin", "API operations cannot change company origin.")
-            headers = {"User-Agent": "NoteToFilm-local/0.1"}
+            headers = {"User-Agent": f"NoteToFilm-CLI/{__version__}"}
             # Never forward company credentials to object-storage or other redirect origins.
             if same_origin:
                 headers.update(self._auth_headers())

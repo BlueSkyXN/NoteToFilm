@@ -12,7 +12,8 @@ from .base import BaseAdapter, local_image
 class NewAPIVideoAdapter(BaseAdapter):
     protocol = "newapi-video"
     modality = "video"
-    PARAMS = {"count", "duration_seconds", "aspect_ratio", "resolution", "generate_audio", "watermark"}
+    PARAMS = {"count", "duration_seconds", "aspect_ratio", "resolution", "generate_audio", "watermark",
+              "return_last_frame", "seed"}
 
     def _error(self, response, method="POST"):
         error = response.get("error")
@@ -61,6 +62,8 @@ class NewAPIVideoAdapter(BaseAdapter):
                 return {"status": "failed", "outputs": [], "error": error}
             raise NTFError("submission_unknown", "Video submission returned no task ID; do not resubmit automatically.")
         job = self._job(remote_id, self.endpoint("poll", "videos/{task_id}", task_id=remote_id))
+        if metadata.get("return_last_frame") is True:
+            job["return_last_frame"] = True
         try:
             return self._normalize(response, job, method="POST")
         except NTFError as exc:
@@ -87,5 +90,17 @@ class NewAPIVideoAdapter(BaseAdapter):
         if status != "completed":
             raise NTFError("upstream_status", "The unified video endpoint returned an unknown task status.")
         content_url = self.endpoint("content", "videos/{task_id}/content", task_id=job["remote_id"])
-        return {**result, "status": "succeeded", "outputs": [{"kind": "video", "url": content_url}],
-                "model": response.get("model")}
+        outputs = [{"kind": "video", "url": content_url}]
+        if job.get("return_last_frame"):
+            # The unified query omits the last frame; the provider-native task record carries content.last_frame_url.
+            try:
+                native = self._json("GET", self.endpoint("native_task", "doubao/api/v3/contents/generations/tasks/{task_id}",
+                                                         task_id=job["remote_id"]))
+                last_frame = (native.get("content") or {}).get("last_frame_url")
+                if isinstance(last_frame, str) and last_frame.startswith(("https://", "http://")):
+                    outputs.append({"kind": "image", "url": last_frame, "role": "last_frame"})
+                else:
+                    result["observation"] = {"code": "last_frame_missing", "message": "The native task record has no last_frame_url."}
+            except NTFError as exc:
+                result["observation"] = {"code": "last_frame_unavailable", "message": str(exc)}
+        return {**result, "status": "succeeded", "outputs": outputs, "model": response.get("model")}

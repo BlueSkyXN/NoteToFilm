@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import posixpath
 import zipfile
 
 import tempfile
@@ -87,6 +88,8 @@ class SkillsInstallationTests(unittest.TestCase):
         assert manifest["$schema"] == "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
         assert manifest["name"] == project["name"] == "notetofilm-local"
         assert manifest["version"] == project["version"]
+        from notetofilm_local import __version__
+        assert __version__ == project["version"]
         assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["version"])
         assert not {"skills", "interface", "mcpServers"}.intersection(manifest)
         interface = manifest["extensions"]["com.openai"]["interface"]
@@ -193,6 +196,22 @@ class SkillsInstallationTests(unittest.TestCase):
             assert sum(name.endswith("/SKILL.md") for name in names) == 7
         with self.assertRaisesRegex(ValueError, "outside"):
             package.build(source, source / "bad.zip")
+
+    def test_real_package_documents_link_only_to_packaged_files(self):
+        output = self.tmp_path / "real.zip"
+        assert load_script("package").build(ROOT, output)["status"] == "packaged"
+        broken = []
+        with zipfile.ZipFile(output) as archive:
+            names = set(archive.namelist())
+            for name in sorted(n for n in names if n.endswith(".md")):
+                for target in re.findall(r"\]\(([^)\s]+)\)", archive.read(name).decode("utf-8")):
+                    path = target.partition("#")[0]
+                    if not path or target.startswith(("http://", "https://", "mailto:")):
+                        continue
+                    resolved = posixpath.normpath(posixpath.join(posixpath.dirname(name), path))
+                    if resolved not in names and not any(n.startswith(resolved + "/") for n in names):
+                        broken.append(f"{name} -> {target}")
+        assert not broken, broken
 
     @unittest.skipIf(os.name == 'nt', 'POSIX runtime update proof')
     def test_code_only_upgrade_preserves_environment_dependencies_and_private_files(self):

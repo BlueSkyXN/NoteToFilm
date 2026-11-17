@@ -17,7 +17,7 @@ description: "从材料制作完整视频，或修改、继续本地视频项目
 5. 先确定声音与文字由谁制作：模型原生声音、独立旁白或混音，字幕与画面关键词分别安排。将选择落实到视频参数和合成策略，分别记录原生声音能力与本次是否采用。
 6. 按 [依赖与修改](references/dependencies.md) 选择制作顺序。分镜驱动的制作在正式分镜保存后执行 `ntf plan PROJECT`；特殊依赖使用 `--file FILE`。探索方向时可先用独立 `generate` 取得候选，再更新正式分镜并用显式清单合成。
 7. 需要按旁白定片长时，先 `ntf run PROJECT --kind audio`，再 `ntf timing PROJECT --apply` 按实测校准并重新 plan。视频先行探索时，先选有效动作，再按真实配音安排剪辑窗口。读取所需媒体 Skill，按 `ntf ready PROJECT` 执行具体动作；公司通道调用传实际配置文件。
-8. 使用 `ntf run PROJECT --action ID --config FILE --wait-seconds 20` 执行或查询；批次用kind/scene、submit-only/poll-only、max-new-actions与stop-on-error控制。私有连接通过connections-file在源码外读取。只要旧动作仍可查询就继续它，不用新提交模拟轮询。
+8. 使用 `ntf run PROJECT --action ID --config FILE --wait-seconds 20` 执行或查询；批次用kind/scene、submit-only/poll-only、max-new-actions与stop-on-error控制。地址与凭据来自环境变量、NoteToFilm 根目录 `.env` 或即时读取的 Codex 配置，`ntf routes` 显示每条路由的来源；临时换用另一份私有连接时加 `--connections-file`。只要旧动作仍可查询就继续它，不用新提交模拟轮询。
 9. 每次取得实际文件后登记结果，审阅可用范围，再查看状态和下一步。同一项目写 state 的 CLI 串行执行；远端任务可通过批次提交后继续在服务端并行，只读媒体检查可并行。最终合成等待已采用的实际媒体。
 10. 改变正式旁白、事实或屏幕文字时回到导演方法，保存主记录。分镜工作流重新 plan；独立候选路线更新正式分镜和合成清单，保留已有动作与素材。只重做实际受影响的部分。
 

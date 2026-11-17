@@ -66,14 +66,37 @@ def prepare_text_renderer(root, settings, cues, overlays):
     return 'pillow'
 
 
+_NO_LINE_START = set('，。！？、；：,.!?;:）)]】》」』”’…—%')
+_NO_LINE_END = set('（([【《「『“‘')
+
+
+def _word(char):
+    return char.isascii() and char.isalnum()
+
+
 def _lines(draw, value, font, width):
+    """Wrap by width; closing punctuation stays at line end, Latin words and numbers stay whole."""
     lines = []
     for paragraph in value.split('\n'):
         line = ''
         for char in paragraph:
-            if line and draw.textlength(line + char, font=font) > width:
-                lines.append(line)
-                line = ''
+            if line and draw.textlength(line + char, font=font) > width and char not in _NO_LINE_START:
+                if char == ' ':
+                    lines.append(line.rstrip())
+                    line = ''
+                    continue
+                carry = ''
+                while line and line[-1] in _NO_LINE_END:
+                    carry, line = line[-1] + carry, line[:-1]
+                if not carry and _word(char):
+                    start = len(line)
+                    while start and _word(line[start - 1]):
+                        start -= 1
+                    if start:
+                        carry, line = line[start:], line[:start]
+                if line:
+                    lines.append(line.rstrip())
+                line = carry
             line += char
         lines.append(line)
     return lines
@@ -120,7 +143,7 @@ def burn_text(source, output, root, settings, duration, cues, overlays):
             '-f', 'rawvideo', '-pixel_format', 'rgba', '-video_size', f'{width}x{height}',
             '-framerate', settings['fps_expression'], '-i', 'pipe:0',
             '-filter_complex', '[0:v:0][1:v:0]overlay=0:0:shortest=1[v]',
-            '-map', '[v]', '-map', '0:a:0', '-c:v', 'libx264', '-preset', 'veryfast',
+            '-map', '[v]', '-map', '0:a?', '-map_metadata', '0', '-c:v', 'libx264', '-preset', 'veryfast',
             '-crf', '20', '-pix_fmt', 'yuv420p', '-threads', '1', '-c:a', 'copy',
             '-t', str(duration), '-movflags', '+faststart', str(output)]
     process = None
