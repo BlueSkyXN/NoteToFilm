@@ -1,0 +1,512 @@
+{
+  "schema_version": 1,
+  "description": "Split-channel experiment: CPA GPT Image 2.5 Flare by default, optional Sunburst; company UniAPI Seedance 2.0 video. CPA Codex subscription flow uses exact variant names. Preserve CPA API prefix; use UniAPI server root. Reference mode evidence includes user-reported tests.",
+  "connections": {
+    "cpa": {
+      "base_url_env": "NTF_CPA_BASE_URL",
+      "auth": {
+        "type": "bearer",
+        "env": "NTF_CPA_API_KEY"
+      },
+      "timeout_seconds": 120
+    },
+    "uniapi": {
+      "base_url_env": "NTF_UNIAPI_BASE_URL",
+      "auth": {
+        "type": "bearer",
+        "env": "NTF_UNIAPI_API_KEY"
+      },
+      "timeout_seconds": 180,
+      "max_input_image_bytes": 31457280
+    }
+  },
+  "routes": {
+    "cpa-image-2-5": {
+      "model": "gpt-image-2.5-flare",
+      "modality": "image",
+      "connection": "cpa",
+      "adapter": "openai-images",
+      "paths": {
+        "generations": "images/generations",
+        "edits": "images/edits"
+      },
+      "defaults": {
+        "count": 1,
+        "size": "1280x720",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "capabilities": {
+        "status": "confirmed",
+        "evidence": {
+          "model_list": "Selected CPA listed gpt-image-2.5-flare and gpt-image-2.5-sunburst.",
+          "service_verified": {
+            "scope": "This project: ordinary Flare generation for scenes 02-10",
+            "model": "gpt-image-2.5-flare",
+            "mode": "text_to_image",
+            "requested_size": "1280x720",
+            "quality": "medium",
+            "count": 1,
+            "output_format": "png",
+            "actual_width": 1672,
+            "actual_height": 941,
+            "http_status": 200
+          },
+          "reference_edit": {
+            "source": "User-supplied separate CPA passthrough test matrix, reported 2026-10-19",
+            "models": [
+              "gpt-image-2.5-flare",
+              "gpt-image-2.5-sunburst",
+              "gpt-image-1.5"
+            ],
+            "http_status": 200,
+            "actual_width": 1254,
+            "actual_height": 1254,
+            "raw_evidence_reviewed_here": false,
+            "exact_size_quality_combination_repeated_here": false
+          },
+          "runtime_connectivity": "not_tested",
+          "reference_limit_scope": "This experiment permits one reference; this is not a provider maximum. More references are not verified by the supplied matrix."
+        },
+        "modes": {
+          "text_to_image": {
+            "supported": true,
+            "parameters": {
+              "count": {
+                "type": "integer",
+                "enum": [
+                  1
+                ]
+              },
+              "size": {
+                "type": "string",
+                "enum": [
+                  "1280x720"
+                ]
+              },
+              "quality": {
+                "type": "string",
+                "enum": [
+                  "medium"
+                ]
+              },
+              "output_format": {
+                "type": "string",
+                "enum": [
+                  "png"
+                ]
+              }
+            }
+          },
+          "reference_to_image": {
+            "supported": true,
+            "max_reference_images": 1,
+            "parameters": {
+              "count": {
+                "type": "integer",
+                "enum": [
+                  1
+                ]
+              },
+              "size": {
+                "type": "string",
+                "enum": [
+                  "1280x720"
+                ]
+              },
+              "quality": {
+                "type": "string",
+                "enum": [
+                  "medium"
+                ]
+              },
+              "output_format": {
+                "type": "string",
+                "enum": [
+                  "png"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "company-seedance-2-0": {
+      "model": "doubao-seedance-2-0-260128",
+      "modality": "video",
+      "connection": "uniapi",
+      "adapter": "newapi-video",
+      "paths": {
+        "submit": "v1/videos",
+        "poll": "v1/videos/{task_id}",
+        "content": "v1/videos/{task_id}/content"
+      },
+      "defaults": {
+        "count": 1,
+        "duration_seconds": 4,
+        "aspect_ratio": "16:9",
+        "resolution": "480p",
+        "generate_audio": false,
+        "watermark": false
+      },
+      "capabilities": {
+        "status": "confirmed",
+        "evidence": {
+          "documented": "Supplied Seedance 2.0 manual: 4-15 seconds or -1, up to 9 reference images, listed resolutions include 4k.",
+          "service_verified": {
+            "mode": "reference_to_video",
+            "reference_count": 3,
+            "duration_seconds": 4,
+            "aspect_ratio": "16:9",
+            "resolution": "480p",
+            "generate_audio": false,
+            "actual_width": 864,
+            "actual_height": 496,
+            "actual_duration_seconds": 4.042
+          },
+          "runtime_connectivity": "not_tested",
+          "other_combinations": "not_individually_tested"
+        },
+        "modes": {
+          "text_to_video": {
+            "supported": true,
+            "parameters": {
+              "count": {
+                "type": "integer",
+                "enum": [
+                  1
+                ]
+              },
+              "duration_seconds": {
+                "type": "integer",
+                "enum": [
+                  -1,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13,
+                  14,
+                  15
+                ]
+              },
+              "aspect_ratio": {
+                "type": "string",
+                "enum": [
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16",
+                  "21:9",
+                  "adaptive"
+                ]
+              },
+              "resolution": {
+                "type": "string",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p",
+                  "4k"
+                ]
+              },
+              "generate_audio": {
+                "type": "boolean"
+              },
+              "watermark": {
+                "type": "boolean"
+              }
+            }
+          },
+          "image_to_video": {
+            "supported": true,
+            "parameters": {
+              "count": {
+                "type": "integer",
+                "enum": [
+                  1
+                ]
+              },
+              "duration_seconds": {
+                "type": "integer",
+                "enum": [
+                  -1,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13,
+                  14,
+                  15
+                ]
+              },
+              "aspect_ratio": {
+                "type": "string",
+                "enum": [
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16",
+                  "21:9",
+                  "adaptive"
+                ]
+              },
+              "resolution": {
+                "type": "string",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p",
+                  "4k"
+                ]
+              },
+              "generate_audio": {
+                "type": "boolean"
+              },
+              "watermark": {
+                "type": "boolean"
+              }
+            }
+          },
+          "reference_to_video": {
+            "supported": true,
+            "parameters": {
+              "count": {
+                "type": "integer",
+                "enum": [
+                  1
+                ]
+              },
+              "duration_seconds": {
+                "type": "integer",
+                "enum": [
+                  -1,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13,
+                  14,
+                  15
+                ]
+              },
+              "aspect_ratio": {
+                "type": "string",
+                "enum": [
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16",
+                  "21:9",
+                  "adaptive"
+                ]
+              },
+              "resolution": {
+                "type": "string",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p",
+                  "4k"
+                ]
+              },
+              "generate_audio": {
+                "type": "boolean"
+              },
+              "watermark": {
+                "type": "boolean"
+              }
+            },
+            "max_reference_images": 9
+          },
+          "first_last_to_video": {
+            "supported": true,
+            "parameters": {
+              "count": {
+                "type": "integer",
+                "enum": [
+                  1
+                ]
+              },
+              "duration_seconds": {
+                "type": "integer",
+                "enum": [
+                  -1,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13,
+                  14,
+                  15
+                ]
+              },
+              "aspect_ratio": {
+                "type": "string",
+                "enum": [
+                  "16:9",
+                  "4:3",
+                  "1:1",
+                  "3:4",
+                  "9:16",
+                  "21:9",
+                  "adaptive"
+                ]
+              },
+              "resolution": {
+                "type": "string",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p",
+                  "4k"
+                ]
+              },
+              "generate_audio": {
+                "type": "boolean"
+              },
+              "watermark": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "cpa-image-2-5-sunburst": {
+      "model": "gpt-image-2.5-sunburst",
+      "modality": "image",
+      "connection": "cpa",
+      "adapter": "openai-images",
+      "paths": {
+        "generations": "images/generations",
+        "edits": "images/edits"
+      },
+      "defaults": {
+        "count": 1,
+        "size": "1280x720",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "capabilities": {
+        "status": "confirmed",
+        "evidence": {
+          "model_list": "Selected CPA listed gpt-image-2.5-flare and gpt-image-2.5-sunburst.",
+          "service_verified": {
+            "source": "User-supplied separate CPA passthrough tests",
+            "model": "gpt-image-2.5-sunburst",
+            "modes": [
+              "text_to_image",
+              "reference_to_image"
+            ],
+            "http_status": 200,
+            "raw_evidence_reviewed_here": false
+          },
+          "reference_edit": {
+            "source": "User-supplied separate CPA passthrough test matrix, reported 2026-10-19",
+            "models": [
+              "gpt-image-2.5-flare",
+              "gpt-image-2.5-sunburst",
+              "gpt-image-1.5"
+            ],
+            "http_status": 200,
+            "actual_width": 1254,
+            "actual_height": 1254,
+            "raw_evidence_reviewed_here": false,
+            "exact_size_quality_combination_repeated_here": false
+          },
+          "runtime_connectivity": "not_tested",
+          "reference_limit_scope": "This experiment permits one reference; this is not a provider maximum. More references are not verified by the supplied matrix."
+        },
+        "modes": {
+          "text_to_image": {
+            "supported": true,
+            "parameters": {
+              "count": {
+                "type": "integer",
+                "enum": [
+                  1
+                ]
+              },
+              "size": {
+                "type": "string",
+                "enum": [
+                  "1280x720"
+                ]
+              },
+              "quality": {
+                "type": "string",
+                "enum": [
+                  "medium"
+                ]
+              },
+              "output_format": {
+                "type": "string",
+                "enum": [
+                  "png"
+                ]
+              }
+            }
+          },
+          "reference_to_image": {
+            "supported": true,
+            "max_reference_images": 1,
+            "parameters": {
+              "count": {
+                "type": "integer",
+                "enum": [
+                  1
+                ]
+              },
+              "size": {
+                "type": "string",
+                "enum": [
+                  "1280x720"
+                ]
+              },
+              "quality": {
+                "type": "string",
+                "enum": [
+                  "medium"
+                ]
+              },
+              "output_format": {
+                "type": "string",
+                "enum": [
+                  "png"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "defaults": {
+    "image_route": "cpa-image-2-5",
+    "video_route": "company-seedance-2-0"
+  }
+}
