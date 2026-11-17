@@ -40,17 +40,18 @@ class TrackTests(unittest.TestCase):
         src.mkdir(parents=True)
         ffmpeg('-f', 'lavfi', '-i', 'testsrc2=s=320x180:r=24:d=3', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=3',
                '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', str(src / 'clip.mp4'))
-        ffmpeg('-f', 'lavfi', '-i', 'sine=frequency=330:duration=2', '-c:a', 'libmp3lame', str(src / 'voice.mp3'))
+        # PCM 固定旁白时长，避免不同 FFmpeg 版本计入 MP3 填充后越过转场边界。
+        ffmpeg('-f', 'lavfi', '-i', 'sine=frequency=330:duration=2', '-c:a', 'pcm_s16le', str(src / 'voice.wav'))
         ffmpeg('-f', 'lavfi', '-i', 'color=c=navy:s=320x180', '-frames:v', '1', str(src / 'still.png'))
         (src / 'voice.srt').write_text('1\n00:00:00,100 --> 00:00:01,800\nNarration line\n')
         (src / 'native.srt').write_text('1\n00:00:00,500 --> 00:00:02,000\nNative dialogue\n')
         self.manifest = {
             'output': {'width': 320, 'height': 180, 'fps': 24, 'subtitles_mode': 'embed', 'audio_tracks': 'dual'},
             'scenes': [
-                {'id': 's01', 'visuals': [{'path': 'assets/src/still.png'}], 'audio': {'path': 'assets/src/voice.mp3'},
+                {'id': 's01', 'visuals': [{'path': 'assets/src/still.png'}], 'audio': {'path': 'assets/src/voice.wav'},
                  'audio_policy': 'edge_tts', 'subtitles_path': 'assets/src/voice.srt', 'duration_seconds': 2.5},
                 {'id': 's02', 'visuals': [{'path': 'assets/src/clip.mp4', 'kind': 'video', 'duration_seconds': 2.5}],
-                 'audio': {'path': 'assets/src/voice.mp3'}, 'audio_policy': 'mix',
+                 'audio': {'path': 'assets/src/voice.wav'}, 'audio_policy': 'mix',
                  'native_subtitles_path': 'assets/src/native.srt',
                  'transition': {'type': 'fade', 'duration_seconds': 0.5}}]}
 
