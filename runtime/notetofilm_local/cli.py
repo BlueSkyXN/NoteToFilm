@@ -19,13 +19,13 @@ from .project import Project, init_project
 
 
 def parser():
-    p = argparse.ArgumentParser(prog="ntf", description="NoteToFilm-local: local media projects and resumable workflows")
-    p.add_argument("--version", action="version", version=f"NoteToFilm-local {__version__}")
+    p = argparse.ArgumentParser(prog="ntf", description="NoteToFilm CLI: local video projects, model routes, media processing and delivery")
+    p.add_argument("--version", action="version", version=f"NoteToFilm CLI {__version__}")
     commands = p.add_subparsers(dest="command", required=True)
     init = commands.add_parser("init", help="Create a local project")
     init.add_argument("project")
     init.add_argument("--title", default="Untitled film")
-    cfg = commands.add_parser("config-init", help="Write six unconfigured company model routes")
+    cfg = commands.add_parser("config-init", help="Write seven unconfigured company model routes")
     cfg.add_argument("file")
     routes = commands.add_parser("routes", help="List configured model routes without calling them")
     routes.add_argument("--config")
@@ -49,7 +49,8 @@ def parser():
     settings.add_argument("--width", type=int)
     settings.add_argument("--height", type=int)
     settings.add_argument("--fps")
-    settings.add_argument("--subtitles", choices=["sidecar", "burn", "none"])
+    settings.add_argument("--subtitles", choices=["sidecar", "burn", "embed", "none"])
+    settings.add_argument("--audio-tracks", choices=["single", "dual"])
     settings.add_argument("--subtitle-renderer", choices=["auto", "libass", "pillow"])
     settings.add_argument("--font-file")
     settings.add_argument("--font-size", type=float)
@@ -121,6 +122,23 @@ def parser():
     motion_mode.add_argument('--preview-only', action='store_true')
     motion.add_argument('--preview-time', type=float)
     motion.add_argument('--force', action='store_true', help='重新渲染为新素材，保留已有版本')
+    web = commands.add_parser('web-render', help='把提供 render(t) 的网页逐帧渲染为项目视频素材')
+    web.add_argument('project')
+    web.add_argument('--page', required=True, help='项目内的 .html 文件或含 index.html 的目录')
+    web.add_argument('--scene', required=True, dest='scene_id', help='对应的固定镜头 ID')
+    web.add_argument('--duration', type=float, help='秒数；省略时读取页面的 window.DUR')
+    web.add_argument('--select', help='采用位置，默认 web.<scene>')
+    web.add_argument('--width', type=int)
+    web.add_argument('--height', type=int)
+    web.add_argument('--fps')
+    web.add_argument('--preview-time', type=float, action='append', dest='preview_times',
+                     help='只输出该时刻的静帧并检查画面是否只由时间决定；可重复')
+    web.add_argument('--force', action='store_true', help='重新渲染为新素材，保留已有版本')
+    web.add_argument('--dpr', type=float, default=1, help='超采样倍数 1–3，导出时缩回项目画幅')
+    web.add_argument('--subframes', type=int, default=1, help='每帧子帧数 1–8，平均得到运动模糊')
+    web.add_argument('--shutter', type=float, default=.5, help='子帧覆盖的快门比例 (0, 1]，默认 0.5')
+    web.add_argument('--grain', type=float, default=0, help='编码时叠加的颗粒强度 0–40')
+    web.add_argument('--text-check', action='store_true', help='预览时检查文字出界、重叠和过小')
     timing = commands.add_parser("timing", help="Report narration estimates or apply measured shot durations")
     timing.add_argument("project")
     timing.add_argument("--mode", choices=["estimate", "measured"], default="measured")
@@ -151,6 +169,23 @@ def parser():
     inspect.add_argument('--max-peak-dbfs', type=float, default=-.1)
     inspect.add_argument('--expect-loudness-lufs', type=float)
     inspect.add_argument('--loudness-tolerance', type=float, default=1)
+    inspect.add_argument('--scan', action='store_true', help='标出冻结、黑场和静音区间，供定位查看')
+    inspect.add_argument('--freeze-seconds', type=float, default=1.0)
+    inspect.add_argument('--silence-seconds', type=float, default=.5)
+    inspect.add_argument('--timeline', help='合成时间表；--scan 结果据此标注镜头 ID')
+    sheet = commands.add_parser('sheet', help='按时间抽帧生成带时间与镜头标注的联系表')
+    sheet.add_argument('file')
+    sheet.add_argument('--output', required=True)
+    sheet.add_argument('--fps', type=float, default=2.0)
+    sheet.add_argument('--start', type=float)
+    sheet.add_argument('--end', type=float)
+    sheet.add_argument('--timeline', help='合成时间表；标注镜头 ID 与字幕，--cuts 据此定位剪点')
+    sheet.add_argument('--cuts', action='store_true', help='只看每个剪点或转场前后')
+    sheet.add_argument('--cut-padding', type=float, default=.5)
+    sheet.add_argument('--cell-width', type=int, default=320)
+    sheet.add_argument('--columns', type=int, default=4)
+    sheet.add_argument('--max-cells', type=int, default=24)
+    sheet.add_argument('--jpeg-quality', type=int, default=80)
     preview = commands.add_parser("preview", help="Export a standalone review page with compressed frames and optional final video")
     preview.add_argument("project")
     preview.add_argument("--output")
@@ -206,11 +241,14 @@ def dispatch(args):
             raise NTFError("config_exists", "The configuration file already exists; edit it in place.")
         if path.suffix.lower() in (".yaml", ".yml", ".toml"):
             raise NTFError("config_format", "config-init writes JSON; use a .json filename.")
-        atomic_json(path, default_config())
-        return {"config": str(path), "routes": 6, "connectivity": "not_tested"}
+        config = default_config()
+        atomic_json(path, config)
+        return {"config": str(path), "routes": len(config["routes"]), "connectivity": "not_tested"}
     if args.command == "routes":
+        from .config import LOADED_ENV_FILES, connection_status
         with connection_environment(load_config(args.config), args.connections_file) as config:
-            return {"routes": list_routes(config)}
+            routes = [{**row, **connection_status(config, row["id"])} for row in list_routes(config)]
+            return {"routes": routes, "env_files": list(LOADED_ENV_FILES)}
     if args.command == "inspect":
         from .inspection import inspect_media
         return inspect_media(args.file, decode=args.decode, output=args.output, frames=args.frames,
@@ -219,7 +257,17 @@ def dispatch(args):
                              expected_duration=args.expect_duration, duration_tolerance=args.duration_tolerance,
                              expect_audio=None if args.expect_audio is None else args.expect_audio=='yes',
                              audio_check=args.audio_check, min_mean_dbfs=args.min_mean_dbfs, max_peak_dbfs=args.max_peak_dbfs,
-                             expected_loudness_lufs=args.expect_loudness_lufs, loudness_tolerance=args.loudness_tolerance)
+                             expected_loudness_lufs=args.expect_loudness_lufs, loudness_tolerance=args.loudness_tolerance,
+                             scan=args.scan, freeze_seconds=args.freeze_seconds, silence_seconds=args.silence_seconds,
+                             timeline=args.timeline)
+    if args.command == 'sheet':
+        from .sheet import contact_sheet
+        if args.cuts and (args.start is not None or args.end is not None):
+            raise NTFError('sheet_parameters', '--cuts 与 --start/--end 二选一。')
+        return contact_sheet(args.file, output=args.output, fps=args.fps, start=args.start, end=args.end,
+                             timeline=args.timeline, cuts=args.cuts, cut_padding=args.cut_padding,
+                             cell_width=args.cell_width, columns=args.columns, max_cells=args.max_cells,
+                             jpeg_quality=args.jpeg_quality)
     if args.command == 'normalize':
         from .loudness import normalize
         try:
@@ -245,6 +293,10 @@ def dispatch(args):
                 "package": str(Path(__file__).parent), "ffmpeg": shutil.which("ffmpeg"),
                 "ffprobe": shutil.which("ffprobe"), "edge_tts": edge_version,
                 "text_rendering": support}
+        try:
+            result["web_rendering"] = {"playwright": importlib.metadata.version("playwright")}
+        except importlib.metadata.PackageNotFoundError:
+            result["web_rendering"] = {"playwright": None}
         marker = Path(sys.prefix).parent/'installation.json'
         if marker.is_file():
             installed = read_json(marker)
@@ -280,7 +332,8 @@ def dispatch(args):
                 document.setdefault("defaults", {})[name] = value
                 changed = True
         for argument, field_name in (("width", "width"), ("height", "height"), ("fps", "fps"),
-                                     ("subtitles", "subtitles_mode"), ("subtitle_renderer", "subtitle_renderer"),
+                                     ("subtitles", "subtitles_mode"), ("audio_tracks", "audio_tracks"),
+                                     ("subtitle_renderer", "subtitle_renderer"),
                                      ("font_file", "subtitle_font_file"), ("font_size", "subtitle_font_size"),
                                      ('loudness_lufs','audio_loudness_lufs'),('true_peak_db','audio_true_peak_db')):
             value = getattr(args, argument)
@@ -360,6 +413,13 @@ def dispatch(args):
         return motion_project(project, read_json(args.manifest), scene_ids=args.scene_ids, stage=args.stage,
                               select_prefix=args.select_prefix, plan_only=args.plan_only,
                               preview_only=args.preview_only, preview_time=args.preview_time, force=args.force)
+    if args.command == 'web-render':
+        from .web_render import web_render
+        return web_render(project, args.page, scene_id=args.scene_id, duration=args.duration, select=args.select,
+                          fps=args.fps, width=args.width, height=args.height,
+                          preview_times=args.preview_times, force=args.force, dpr=args.dpr,
+                          subframes=args.subframes, shutter=args.shutter, grain=args.grain,
+                          text_check=args.text_check)
     if args.command == "timing":
         from .timing import narration_timing
         return narration_timing(project, mode=args.mode, scene_ids=args.scene_ids,
@@ -377,6 +437,8 @@ def dispatch(args):
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
+        from .config import load_env_files
+        load_env_files()
         result = dispatch(args)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         if result.get('verification',{}).get('passed') is False:

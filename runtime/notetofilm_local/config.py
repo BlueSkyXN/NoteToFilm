@@ -5,6 +5,8 @@ import copy
 import json
 import os
 import re
+import sys
+import tomllib
 from contextlib import contextmanager
 from importlib.resources import files
 from pathlib import Path
@@ -32,7 +34,7 @@ def default_config() -> dict:
             "auth": {"type": "unconfirmed", "env": "NTF_COMPANY_API_KEY"},
         }},
         "routes": routes,
-        "defaults": {"image_route": "company-image-2", "video_route": "company-seedance-2-0"},
+        "defaults": {"image_route": "company-image-2", "video_route": "company-seedance-2-0-fast"},
     }
 
 
@@ -68,6 +70,111 @@ def _reject_inline_credentials(value: object) -> None:
     elif isinstance(value, list):
         for item in value:
             _reject_inline_credentials(item)
+
+
+ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+LOADED_ENV_FILES: list[str] = []
+
+
+def _source_root() -> Path | None:
+    """The NoteToFilm checkout this code runs from (source tree or dist/ntf-runtime build), if any."""
+    base = Path(sys.executable).resolve() if getattr(sys, "frozen", False) else Path(__file__).resolve()
+    root = base.parents[2]
+    try:
+        marker = (root / "pyproject.toml").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return root if 'name = "notetofilm-local"' in marker else None
+
+
+def _parse_env(text: str) -> dict:
+    values = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        key, sep, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if not sep or not ENV_NAME.fullmatch(key):
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def load_env_files() -> list[str]:
+    """Load .env files without overriding variables that are already set (environment first).
+
+    NTF_ENV_FILE selects one file explicitly; otherwise ./.env, then the NoteToFilm source root .env.
+    """
+    explicit = os.environ.get("NTF_ENV_FILE")
+    if explicit:
+        candidates = [Path(explicit).expanduser()]
+    else:
+        root = _source_root()
+        candidates = [Path.cwd() / ".env"] + ([root / ".env"] if root else [])
+    loaded, seen = [], set()
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+            if resolved in seen or not resolved.is_file():
+                continue
+            seen.add(resolved)
+            values = _parse_env(resolved.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        for key, value in values.items():
+            os.environ.setdefault(key, value)
+        loaded.append(str(resolved))
+    LOADED_ENV_FILES[:] = loaded
+    return loaded
+
+
+def codex_provider(name: str | None = "selected") -> dict:
+    """Read a Codex model provider at call time: its base URL and bearer token, never copied elsewhere."""
+    home = os.environ.get("CODEX_HOME")
+    path = (Path(home).expanduser() if home else Path.home() / ".codex") / "config.toml"
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except OSError:
+        raise NTFError("codex_config_missing", "Codex configuration is not readable; set the connection environment variables instead.", {"path": str(path)}) from None
+    except tomllib.TOMLDecodeError:
+        raise NTFError("codex_config_invalid", "Codex configuration is not valid TOML.", {"path": str(path)}) from None
+    selected = data.get("model_provider") if name in (None, "", "selected") else name
+    providers = data.get("model_providers")
+    entry = providers.get(selected) if isinstance(providers, dict) and isinstance(selected, str) else None
+    if not isinstance(entry, dict) or not isinstance(entry.get("base_url"), str) or not entry["base_url"].strip():
+        raise NTFError("codex_provider_missing", "The Codex model provider has no base_url.", {"provider": selected, "path": str(path)})
+    token = entry.get("experimental_bearer_token")
+    if not (isinstance(token, str) and token) and isinstance(entry.get("env_key"), str):
+        token = os.environ.get(entry["env_key"])
+    return {"name": selected, "base_url": entry["base_url"].strip().rstrip("/"),
+            "token": token if isinstance(token, str) and token else None}
+
+
+def connection_status(config: dict, route_id: str) -> dict:
+    """Where a route's address and credential come from, without revealing either."""
+    try:
+        route = resolve_route(config, route_id, config["routes"][route_id].get("modality"))
+    except NTFError as exc:
+        return {"connection_source": "unavailable", "credential": "missing", "error_code": exc.code}
+    conn = route["connection"]
+    auth = conn.get("auth", {}) if isinstance(conn.get("auth"), dict) else {}
+    if auth.get("type") == "none":
+        credential = "not_required"
+    elif os.environ.get(auth.get("env") or ""):
+        credential = "environment"
+    elif conn.get("codex_provider"):
+        try:
+            credential = "codex" if codex_provider(conn["codex_provider"])["token"] else "missing"
+        except NTFError:
+            credential = "missing"
+    else:
+        credential = "missing"
+    return {"connection_source": conn.get("connection_source", "unknown"), "credential": credential}
 
 
 def load_config(path: str | Path | None = None) -> dict:
@@ -173,7 +280,13 @@ def resolve_route(config: dict, route_id: str | None, modality: str) -> dict:
         conn = copy.deepcopy(conn)
     else:
         raise NTFError("connection_missing", "The route requires an explicit company connection.")
-    base = conn.get("base_url") or os.environ.get(conn.get("base_url_env", ""))
+    base, source = conn.get("base_url"), "configured"
+    if not base and os.environ.get(conn.get("base_url_env", "")):
+        base, source = os.environ[conn["base_url_env"]], "environment"
+    if not base and conn.get("codex_provider"):
+        provider = codex_provider(conn["codex_provider"])
+        base, source = provider["base_url"], f"codex:{provider['name']}"
+    conn["connection_source"] = source if base else "missing"
     if base:
         parsed = urlsplit(base)
         if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:

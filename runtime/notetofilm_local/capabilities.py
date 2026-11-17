@@ -7,7 +7,7 @@ from .errors import NTFError
 IMAGE_MODES = {"text_to_image", "reference_to_image"}
 VIDEO_MODES = {"text_to_video", "image_to_video", "reference_to_video", "first_last_to_video"}
 ALIASES = {"n": "count", "duration": "duration_seconds", "ratio": "aspect_ratio", "format": "output_format"}
-META = {"action_id", "scene_id", "route", "kind", "mode", "prompt", "visual_prompt", "video_prompt", "references", "start_frame", "end_frame", "parameters", "output", "duration_seconds", "model", "selection_slot"}
+META = {"action_id", "scene_id", "route", "kind", "mode", "prompt", "visual_prompt", "video_prompt", "references", "start_frame", "end_frame", "mask", "parameters", "output", "duration_seconds", "model", "selection_slot"}
 
 
 def request_mode(route: dict, request: dict) -> str:
@@ -63,6 +63,30 @@ def _value_matches(value, rule: dict) -> bool:
     return True
 
 
+def _check_custom_size(size, rule) -> None:
+    """Apply a route-declared WIDTHxHEIGHT rule (multiple, longest edge, pixel range, aspect ratio)."""
+    if not isinstance(rule, dict) or not isinstance(size, str) or size == "auto":
+        return
+    try:
+        width, height = (int(part) for part in size.lower().split("x"))
+    except ValueError:
+        raise NTFError("unsupported_parameter", "size must be auto or WIDTHxHEIGHT.", {"size": size}) from None
+    multiple, edge = rule.get("multiple_of", 1), rule.get("max_edge")
+    pixels, ratio = width * height, max(width, height) / max(1, min(width, height))
+    problems = []
+    if width <= 0 or height <= 0 or width % multiple or height % multiple:
+        problems.append(f"both edges must be positive multiples of {multiple}")
+    if edge and max(width, height) > edge:
+        problems.append(f"longest edge must be at most {edge}")
+    if pixels < rule.get("min_pixels", 0) or ("max_pixels" in rule and pixels > rule["max_pixels"]):
+        problems.append(f"total pixels must be between {rule.get('min_pixels', 0)} and {rule.get('max_pixels')}")
+    if "max_ratio" in rule and ratio > rule["max_ratio"]:
+        problems.append(f"aspect ratio must be within 1:{rule['max_ratio']} and {rule['max_ratio']}:1")
+    if problems:
+        raise NTFError("unsupported_parameter", "size is outside the route's custom size rule: " + "; ".join(problems) + ".",
+                       {"size": size, "rule": rule})
+
+
 def check_request(route: dict, request: dict) -> None:
     if not isinstance(request, dict):
         raise NTFError("request_invalid", "Generation request must be an object.")
@@ -96,6 +120,9 @@ def check_request(route: dict, request: dict) -> None:
     }[mode]
     if (bool(refs), bool(start), bool(end)) != expected:
         raise NTFError("mode_inputs", "References and endpoint frames do not match the selected mode; they are not interchangeable.", {"mode": mode})
+    mask = request.get("mask")
+    if mask is not None and (mode != "reference_to_image" or not isinstance(mask, dict)):
+        raise NTFError("mode_inputs", "mask applies to reference_to_image and marks the editable area of the first reference.", {"mode": mode})
     cap = route.get("capabilities", {})
     if not isinstance(cap, dict) or cap.get("status") != "confirmed":
         raise NTFError("capability_unknown", "Company route capabilities are not confirmed; configure them from the company's contract before generation.", {"route": route.get("id")})
@@ -109,7 +136,10 @@ def check_request(route: dict, request: dict) -> None:
             raise NTFError("capability_unknown", "Confirm max_reference_images for this company route.")
         if len(refs) > limit:
             raise NTFError("reference_limit", "The request exceeds the configured company reference limit.", {"requested": len(refs), "maximum": limit})
+    if mask is not None and spec.get("supports_mask") is not True:
+        raise NTFError("capability_unknown", "Confirm supports_mask for this route before sending a mask.", {"route": route.get("id")})
     params = request_parameters(request, route.get("defaults", {}))
+    _check_custom_size(params.get("size"), spec.get("custom_size"))
     rules = spec.get("parameters", {})
     for name, value in params.items():
         if name not in rules:

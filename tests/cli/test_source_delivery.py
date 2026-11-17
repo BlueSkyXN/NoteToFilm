@@ -77,7 +77,7 @@ class SourceDeliveryTests(unittest.TestCase):
             source.rename(self.directory / 'source-moved-away')
             self.assertFalse(source.exists())
             version = self.execute(command, '--version').strip()
-            self.assertEqual(version, f"NoteToFilm-local {installed['version']}")
+            self.assertEqual(version, f"NoteToFilm CLI {installed['version']}")
             information = json.loads(self.execute(command, 'install-info'))
             self.assertTrue(Path(information['package']).is_relative_to(Path(installed['runtime_dir'])))
             self.assertIsNone(information['edge_tts'])

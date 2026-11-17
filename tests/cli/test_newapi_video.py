@@ -50,7 +50,7 @@ class NewAPIVideoTests(unittest.TestCase):
         image = resolve_route(self.config, None, "image")
         video = resolve_route(self.config, None, "video")
         self.assertEqual(image["model"], "gpt-image-2")
-        self.assertEqual(video["model"], "doubao-seedance-2-0-260128")
+        self.assertEqual(video["model"], "doubao-seedance-2-0-fast-260128")
         self.assertEqual(default_config()["defaults"]["image_route"], "company-image-2")
         self.assertEqual(video["capabilities"]["evidence"]["runtime_connectivity"], "not_tested")
         self.assertEqual(video["capabilities"]["evidence"]["service_verified"]["reference_count"], 3)
@@ -81,6 +81,38 @@ class NewAPIVideoTests(unittest.TestCase):
         self.assertEqual(Path(files[0]["path"]).read_bytes(), VIDEO_CONTAINER_FIXTURE)
         self.assertEqual(adapter.opener.requests[-1].full_url, "https://gateway.example/v1/videos/task-1/content")
         self.assertEqual(adapter.opener.requests[-1].get_header("Authorization"), "Bearer local-test-secret")
+
+    def last_frame_adapter(self, *replies):
+        route = resolve_route(self.config, None, "video")
+        route["capabilities"]["modes"]["text_to_video"]["parameters"]["return_last_frame"] = {"type": "boolean"}
+        adapter = get_adapter(route)
+        adapter.opener = MockHTTP(*replies)
+        return adapter
+
+    def test_last_frame_is_read_from_native_task_and_downloaded_without_credentials(self):
+        adapter = self.last_frame_adapter(
+            {"id": "task-3", "status": "queued"}, {"id": "task-3", "status": "completed"},
+            {"id": "task-3", "status": "succeeded", "content": {"last_frame_url": "https://storage.example/last.png?sig=1"}},
+            VIDEO_CONTAINER_FIXTURE, PNG)
+        submitted = adapter.submit({"prompt": "test", "parameters": {"return_last_frame": True}}, self.root)
+        self.assertIs(json.loads(adapter.opener.requests[0].data)["metadata"]["return_last_frame"], True)
+        completed = adapter.poll(submitted["job"])
+        self.assertEqual(adapter.opener.requests[2].full_url,
+                         "https://gateway.example/doubao/api/v3/contents/generations/tasks/task-3")
+        self.assertEqual([(o["kind"], o.get("role")) for o in completed["outputs"]], [("video", None), ("image", "last_frame")])
+        files = adapter.fetch(completed, self.root / "out")
+        self.assertEqual(Path(files[1]["path"]).read_bytes(), PNG)
+        self.assertEqual(adapter.opener.requests[-1].full_url, "https://storage.example/last.png?sig=1")
+        self.assertIsNone(adapter.opener.requests[-1].get_header("Authorization"))
+
+    def test_missing_last_frame_keeps_the_video(self):
+        adapter = self.last_frame_adapter({"id": "task-4", "status": "queued"}, {"id": "task-4", "status": "completed"},
+                                          URLError("native query unavailable"))
+        submitted = adapter.submit({"prompt": "test", "parameters": {"return_last_frame": True}}, self.root)
+        completed = adapter.poll(submitted["job"])
+        self.assertEqual(completed["status"], "succeeded")
+        self.assertEqual([o["kind"] for o in completed["outputs"]], ["video"])
+        self.assertEqual(completed["observation"]["code"], "last_frame_unavailable")
 
     def test_first_last_roles_stay_distinct_from_ordinary_references(self):
         adapter = self.adapter({"id": "task-2"})
@@ -166,7 +198,7 @@ class NewAPIVideoTests(unittest.TestCase):
             self.assertTrue(recovered["complete"])
             self.assertEqual(recovered["asset_count"], 1)
         self.assertEqual([r.get_method() for r in adapter.opener.requests], ["POST", "GET", "GET", "GET"])
-        self.assertEqual(seen[-1]["model"], "doubao-seedance-2-0-260128")
+        self.assertEqual(seen[-1]["model"], "doubao-seedance-2-0-fast-260128")
         self.assertEqual(seen[-1]["connection"]["base_url"], "https://gateway.example")
 
 

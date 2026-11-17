@@ -1,10 +1,12 @@
-# 定位运行入口
+# 定位 NoteToFilm CLI
+
+文档中的 `ntf` 指 NoteToFilm 的命令行形态（NoteToFilm CLI）。Skill 通过它管理项目、调用模型通道、处理媒体和交付；`ntf --version` 显示 `NoteToFilm CLI <版本>`。
 
 ## 在 NoteToFilm 仓库中使用
 
-完整源码位于仓库的 `runtime/notetofilm_local/`，统一入口是 `scripts/ntf.py`。核对这两个位置存在后，使用已有、具备相应依赖的 Python 执行 `python scripts/ntf.py install-info`，后续用同一入口替代文档中的 `ntf`。离开仓库执行时，传入该脚本的绝对路径。
+完整源码位于仓库的 `runtime/notetofilm_local/`，统一入口是 `scripts/ntf.py`。核对这两个位置存在后，使用已有、具备相应依赖的 Python 执行 `python scripts/ntf.py install-info`，后续用同一入口替代文档中的 `ntf`。离开仓库执行时，传入该脚本的绝对路径。仓库里已构建的 `dist/ntf` 不需要 Python，也可直接使用；它不含网页动画渲染（`web-render`），该命令用源码入口执行。
 
-项目技能的源码在 `.agents/skills/`，公共运行说明由 `shared/` 维护并同步。不要从 Skill 目录拼接运行包位置，也不要遍历用户目录寻找其他插件。
+项目技能的源码在 `.agents/skills/`，公共运行说明由 `shared/` 维护并同步。不要从 Skill 目录拼接 CLI 位置，也不要遍历用户目录寻找其他插件。
 
 ## 使用已安装的入口
 
@@ -16,9 +18,9 @@
 
 ## 配置与制作项目
 
-`ntf config-init FILE` 生成六条未配置路由。通用样例在仓库 `configs/`；图像与视频使用独立连接时，分别引用地址和凭据。使用前读取通道说明并用 `ntf routes --config FILE` 核对；模板中的 evidence 区分服务实测与运行代码联通，模型 ID 不决定接口协议。
+`ntf config-init FILE` 生成七条未配置路由。通用样例在仓库 `configs/`；图像与视频使用独立连接时，分别引用地址和凭据。使用前读取通道说明并用 `ntf routes --config FILE` 核对；模板中的 evidence 区分服务实测与运行代码联通，模型 ID 不决定接口协议。
 
-真实素材和具体业务案例保存在用户指定的制作项目，连接信息与凭据沿用已有私有配置；这些内容不写入 Skill 或通用源码。
+连接地址与凭据不写入 Skill、路由配置或制作项目。`ntf` 按以下顺序取得：已设置的环境变量；NoteToFilm 根目录的 `.env`（被 git 忽略，命令启动时读取，不覆盖已有环境变量；`NTF_ENV_FILE` 可指定其他文件）；路由连接声明 `codex_provider` 时，在每次请求时读取 Codex 配置（`$CODEX_HOME/config.toml` 或 `~/.codex/config.toml`）中该 provider 的 `base_url` 与令牌，`selected` 表示 Codex 当前选用的 provider。用 `ntf routes --config FILE` 查看每条路由的 `connection_source` 与 `credential` 来源，不输出具体值。真实素材和具体业务案例保存在用户指定的制作项目。
 
 ## 安装与更新
 

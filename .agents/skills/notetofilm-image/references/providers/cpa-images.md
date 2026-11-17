@@ -1,16 +1,34 @@
 # CPA 图像通道
 
-使用 `openai-images` 图像路由时，根据实际配置选择模型、地址和认证引用。图像与视频采用独立连接时分别配置，不串用凭据。
+使用 `openai-images` 图像路由时，根据实际配置选择模型、地址和认证引用。图像与视频采用独立连接时分别配置，不串用凭据。路由样例的生图连接声明 `codex_provider: "selected"`，与 Codex 当前选用的 provider 共用地址和令牌，每次请求时读取；设置了 `NTF_CPA_BASE_URL`、`NTF_CPA_API_KEY` 时以环境变量为准。`ntf routes` 可查看实际来源。
 
 ## 模型与能力核对
 
 用 `ntf routes --config FILE` 核对精确模型 ID、账号、模式与路由能力。模型清单列出某ID，只证明网关收录。
 
+路由样例 `configs/cpa-uniapi.example.json` 默认使用 `gpt-image-2.6-sunburst`（路由 `cpa-image-2-6-sunburst`），2.5 Flare 与 Sunburst 保留为可选路由。同样请求 1280×720，2.6 Sunburst 实测返回 1280×720，2.5 Flare 曾返回 1672×941；以实际文件尺寸为准安排裁切和合成。
+
+## GPT Image 参数怎么用
+
+这条通道是 OpenAI 原厂 GPT Image，能力按路由声明使用：
+
+| 需要 | 参数与做法 |
+|---|---|
+| 指定画幅 | `size` 为 `auto` 或 `宽x高`：两边是 16 的倍数，最长边不超过 3840，总像素 655,360–8,294,400，长宽比不超过 3:1。16:9 常用 `1536x864`、`1280x720`（实测可用）、`3840x2160`；竖屏 `864x1536` |
+| 质量与速度 | `quality`：`low` 适合草图和方向比较，`medium` 日常，`high` 用于定稿与基准图 |
+| 抠图素材 | `background: "transparent"` 配 `output_format: "png"`，得到带透明通道的物件，可直接作为 `ntf motion` 图层或代码动画素材叠在任意背景上 |
+| 一次多张候选 | `count` 1–4（原厂最多 10），同一提示词得到多张候选，按 `select_index` 或 `ntf select` 采用 |
+| 局部修改 | `reference_to_image` 加 `mask`：PNG，与第一张参考图同尺寸，透明区域是要改的地方，其余保持。适合加减物件、改局部、修错字和变形 |
+| 多图合成 | 最多 16 张参考图，提示词按“图片1、图片2”说明各自用途。合成会重新构图；需要保持原构图时改用遮罩修改 |
+| 体积 | JPEG 用 `output_compression` 0–100 控制压缩 |
+
+实测范围（2026-11-17）：1280×720 文生、1536×864 高质量透明背景、单图遮罩修改、两图合成均成功。`xhigh`、`max` 质量档与 WebP 输出在本通道未测。
+
 当错误显示模型、账号或请求不匹配时，停止同通道剩余请求，检查正文和Retry-After，不反复重发或直接归因“参考编辑不支持”。
 
 ## 原生请求形状
 
-按连接配置的基址和路径组合 `images/generations` 与 `images/edits` 端点；HTTP使用`User-Agent: NoteToFilm-local/0.1`。
+按连接配置的基址和路径组合 `images/generations` 与 `images/edits` 端点；HTTP使用`User-Agent: NoteToFilm-CLI/<版本>`。
 
 普通生图为JSON。参考图编辑支持以下两种形状，按实际已实现的方式发送：
 

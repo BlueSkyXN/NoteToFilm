@@ -119,3 +119,17 @@ subtitles_mode 为 burn 时，subtitle_renderer 可选 auto、libass、pillow。
 默认不归一化。显式设置audio_loudness_lufs后使用EBU R128响度处理，目标范围-70至-5 LUFS；audio_true_peak_db范围-9至0 dBTP，默认-2。背景轨在最终AAC编码前混合，字幕烧录沿用已合成的音轨。
 
 该参数触发合成时的响度处理，最终编码后的 LUFS 与真峰值仍需实测。需要更精确校准时使用 [交付命令](delivery.md) 中的 `ntf normalize` 双遍处理。
+
+## 可切换字幕与双音轨
+
+需要让观看者自己选择声音和字幕时，在 `output` 中设置：
+
+```json
+{"output": {"width":1280,"height":720,"fps":24,"subtitles_mode":"embed","audio_tracks":"dual"}}
+```
+
+- `subtitles_mode: "embed"`：字幕作为可切换的轨道封装进 MP4（mov_text），同时保留旁挂 SRT；画面不烧字。
+- `audio_tracks: "dual"`：第一轨「旁白混音」按各镜 `audio_policy` 混合，含背景轨和响度处理，为默认轨；第二轨「原声」取每镜所采用视频的原始声音，按相同的采用范围、变速和转场排列，满音量，没有原声的镜头为静音。
+- 镜头的 `native_subtitles_path` 指定原声的字幕文件（SRT/VTT），时间从本镜起点算，输出为第二条字幕轨「原声字幕」和 `native_subtitles.srt`。NoteToFilm CLI 不自动识别原声内容；原声字幕来自对白稿件或人工整理。
+
+`burn` 只烧录旁白字幕，原声字幕仍输出为旁挂文件。浏览器内播放通常只使用默认音轨；比较两条音轨或切换字幕时，用支持多轨的本地播放器。`ntf normalize` 只处理第一条音轨并丢弃其他轨道，双音轨或内封字幕的成片改用 `output.audio_loudness_lufs` 在合成时处理响度。

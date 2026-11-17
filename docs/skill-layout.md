@@ -19,20 +19,23 @@
 ## 目录结构
 
 ```text
-notetofilm-local/
+NoteToFilm/
 ├── .agents/skills/
 │   ├── notetofilm-workflow/       # 阶段路由与执行组织
 │   ├── notetofilm-prepare/        # 材料及来源
 │   ├── notetofilm-direct/         # 方案与分镜
 │   │   ├── SKILL.md
 │   │   ├── assets/
-│   │   │   └── design-brief.template.md
+│   │   │   ├── design-brief.template.md  # 设计选择、段落卡、转场对与音画表
+│   │   │   └── style-recipe.template.md  # 可复用的风格配方
 │   │   └── references/
 │   │       ├── design-map.md      # 叙事 × 制作路线 × 视觉语言
 │   │       ├── story-design.md    # 案例故事、原理解释、观点论证
 │   │       ├── visual-language.md # 画风、动作、运镜和转场
 │   │       ├── shot-freedom.md    # 单镜约束和开放范围
 │   │       ├── examples.md        # 正式分镜字段示例
+│   │       ├── pitfalls.md        # 常见默认做法与修正
+│   │       ├── styles/            # 风格库：INDEX.md 与各风格文件
 │   │       └── routes/
 │   │           ├── evidence-led.md
 │   │           ├── image-led.md
@@ -50,16 +53,22 @@ notetofilm-local/
 │   ├── notetofilm-audio/
 │   │   └── references/voice-and-subtitles.md
 │   └── notetofilm-compose/
-│       └── references/{timeline,manifest,motion,delivery}.md
+│       ├── assets/code-animation/  # 代码动画骨架：index.html、timing.js、motion.js
+│       └── references/{timeline,manifest,motion,code-animation,code-recipes,motion-craft,toolbox,delivery}.md
 ├── shared/                       # 运行说明的维护源
 │   ├── runtime.md
 │   ├── project-format.md
 │   └── commands.md
 ├── scripts/sync_skill_references.py
+├── scripts/build_binary.py       # 构建 dist/ntf
 └── runtime/notetofilm_local/      # ntf 执行代码
+    ├── config.py                 # 路由解析与连接来源（环境变量、.env、Codex 配置）
+    ├── inspection.py             # inspect 媒体探测与 --scan
     ├── motion.py / motion_render.py # 图层动效、关键帧与素材登记
     ├── compose.py / timing.py    # 变速、转场与音画窗口
     ├── loudness.py               # normalize 双遍响度
+    ├── sheet.py                  # sheet 按时间抽帧的联系表
+    ├── web_render.py             # web-render 网页动画逐帧渲染（data/text_hook.js 供文字检查）
     └── review_server.py          # serve 可拖动审阅服务
 ```
 
@@ -76,15 +85,15 @@ notetofilm-local/
 - 入口 `SKILL.md`：触发范围、关键决定和需要时读取的资料；纯设计时不提前加载接口与 CLI 全表。
 - `direct/references/routes/`：不同画面来源与控制方式的制作方法。叙事结构和视觉语言由相应公共设计资料维护。
 - 媒体技能 `references/providers/`：已有独立篇幅的供应商协议、能力边界与验证范围。新增模型先判断能否沿用现有协议说明。
-- 技能 `assets/`：实际要复制到制作备稿或产物中的模板。当前音画表是可选备稿，正式旁白仍以主分镜为准。
-- `runtime/`：可重复的制作能力通过 `ntf` 参数调用。技能说明引用命令；工具实现和行为测试由运行包统一维护。
+- 技能 `assets/`：实际要复制到制作备稿或产物中的模板。音画表和风格配方是可选备稿，正式旁白仍以主分镜为准。
+- `runtime/`：NoteToFilm CLI 的源码，可重复的制作能力通过 `ntf` 参数调用。技能说明引用命令；实现和行为测试在 CLI 中统一维护。
 - `shared/`：共同运行说明；业务材料、媒体、私有配置和本机路径留在源码外。
 
 需要新增玩法时优先给对应路线补选择条件；当已有方法无法覆盖且有稳定输入、产出与验收流程时再增加路线文档。只有出现独立的用户触发和工作职责，才考虑新建顶层 Skill。
 
 ## 运行与分发边界
 
-CLI 0.2.1 将运行包与技能纳入同一仓库，沿用 0.2.0 的命令、包名和项目格式。`.agents/skills/` 是技能的唯一维护源；安装器复制这些文件并生成每台机器的运行定位。
+NoteToFilm 当前形态是 CLI（`ntf`）加 Skill；Web 工作台暂不维护，以后可能增加 Server 等形态。CLI 源码与技能在同一仓库维护，`.agents/skills/` 是技能的唯一维护源；安装器复制这些文件并生成每台机器的运行定位。
 
 | 位置 | 职责 | 依赖 |
 |---|---|---|
@@ -96,9 +105,9 @@ CLI 0.2.1 将运行包与技能纳入同一仓库，沿用 0.2.0 的命令、包
 | `scripts/package.py` | CLI 与 Skill 源码包 | 显式组件清单 |
 | `tests/cli/` | CLI、媒体与分发安装回归 | `scripts/check_cli.py` 严格入口 |
 
-运行包独立于 Web 的 `app/` 和原本机 `local/`。Web 保留现有服务、数据库及验证入口，当前不合并两套状态管理。配置使用 `configs/` 样例与源码外私有连接，制作项目由用户指定目录管理。
+CLI 与 Web 的 `app/` 相互独立。Web 保留现有服务、数据库及验证入口，当前不合并两套状态管理。路由配置使用 `configs/` 样例；地址与凭据来自环境变量、仓库根目录 `.env` 或即时读取的 Codex 配置，详见[通道配置说明](company-protocols.md)。制作项目由用户指定目录管理。
 
-新增 CLI 命令时修改运行包及对应测试；调整制作方法时修改相关 Skill；公共入口说明只修改 `shared/` 再同步。分发与安装验证会移走解压源码，再从独立入口完成真实合成，检查这些边界。
+新增 CLI 命令时修改 `runtime/` 及对应测试；调整制作方法时修改相关 Skill；公共入口说明只修改 `shared/` 再同步。分发与安装验证会移走解压源码，再从独立入口完成真实合成，检查这些边界。
 
 ## 维护与验证
 

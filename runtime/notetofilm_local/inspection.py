@@ -10,11 +10,54 @@ from .io import atomic_json
 from .media import probe, run_media_command
 
 
+def _intervals(starts, ends, duration):
+    result = []
+    for i, start in enumerate(starts):
+        end = ends[i] if i < len(ends) else duration
+        result.append({'start_seconds': round(max(0.0, start), 3), 'end_seconds': round(min(end, duration), 3)})
+    return result
+
+
+def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline=None):
+    """Report frozen, black and silent intervals as places worth looking at; never a pass/fail verdict."""
+    if info['kind'] != 'video' or not info.get('duration_seconds'):
+        raise NTFError('inspect_parameters', '--scan 只处理可测得时长的视频。')
+    if any(not math.isfinite(v) or v <= 0 for v in (freeze_seconds, silence_seconds)):
+        raise NTFError('inspect_parameters', '冻结与静音的最短时长须为正数。')
+    duration = info['duration_seconds']
+    args = ['ffmpeg', '-hide_banner', '-nostdin', '-i', str(source),
+            '-vf', f'freezedetect=n=-60dB:d={freeze_seconds:g},blackdetect=d=0.2:pix_th=0.10']
+    args += ['-af', f'silencedetect=n=-35dB:d={silence_seconds:g}'] if info.get('has_audio') else ['-an']
+    log = run_media_command(args + ['-f', 'null', '-'], timeout=900).stderr
+    number = r'(-?[0-9]+(?:\.[0-9]+)?)'
+    found = {
+        'freeze': _intervals([float(v) for v in re.findall(r'freeze_start: ' + number, log)],
+                             [float(v) for v in re.findall(r'freeze_end: ' + number, log)], duration),
+        'black': [{'start_seconds': round(float(a), 3), 'end_seconds': round(float(b), 3)}
+                  for a, b in re.findall(r'black_start:' + number + r' black_end:' + number, log)],
+        'silence': _intervals([float(v) for v in re.findall(r'silence_start: ' + number, log)],
+                              [float(v) for v in re.findall(r'silence_end: ' + number, log)], duration)
+        if info.get('has_audio') else None,
+    }
+    if timeline:
+        from .io import read_json
+        from .preview import _timeline
+        windows = _timeline(read_json(timeline), duration, info.get('fps') or 30)
+        for items in found.values():
+            for item in items or []:
+                item['scene_ids'] = [sid for sid, (a, b) in windows.items()
+                                     if a < item['end_seconds'] and b > item['start_seconds']]
+    found['thresholds'] = {'freeze_seconds': freeze_seconds, 'black_seconds': .2,
+                           'silence_seconds': silence_seconds if info.get('has_audio') else None}
+    return found
+
+
 def inspect_media(source, *, decode=False, output=None, frames=3, max_width=960, jpeg_quality=80,
                   at_seconds=None, write_report=True, expected_width=None, expected_height=None,
                   expected_fps=None, expected_duration=None, duration_tolerance=.1,
                   expect_audio=None, audio_check=False, min_mean_dbfs=-60, max_peak_dbfs=-.1,
-                  expected_loudness_lufs=None, loudness_tolerance=1):
+                  expected_loudness_lufs=None, loudness_tolerance=1,
+                  scan=False, freeze_seconds=1.0, silence_seconds=.5, timeline=None):
     source = Path(source).expanduser().resolve()
     if frames < 1 or frames > 30 or max_width < 16 or max_width > 4096 or not 1<=jpeg_quality<=95:
         raise NTFError('inspect_parameters', 'Use 1–30 frames, width 16–4096, and JPEG quality 1–95.')
@@ -74,6 +117,9 @@ def inspect_media(source, *, decode=False, output=None, frames=3, max_width=960,
                   {'minimum':min_mean_dbfs},levels['mean_volume'])
             check('max_volume_dbfs',levels['max_volume'] is None or levels['max_volume']<=max_peak_dbfs,
                   {'maximum':max_peak_dbfs},levels['max_volume'])
+    if scan:
+        result['scan'] = scan_media(source, info, freeze_seconds=freeze_seconds,
+                                    silence_seconds=silence_seconds, timeline=timeline)
     result['verification'] = {'passed':all(c['passed'] for c in checks) if checks else None,'checks':checks}
     if output is None:
         return result

@@ -1,12 +1,37 @@
 # 更新记录
 
-## CLI 0.2.1 · 未发布
+CLI 与 Web 分别编号，版本号遵循语义化版本。
 
-- 将完整 `notetofilm_local` 运行包、安装器、配置样例和测试纳入正式源码目录，保留原命令及制作项目格式。
-- `.agents/skills/` 作为七个 Skill 的唯一源码，公共引用从 `shared/` 同步；源码入口改为 `scripts/ntf.py`。
-- 分发包按 CLI 组件清单收集文件，支持在源码目录外安装运行包与技能；增加真实分发、独立安装和合成回归。
-- 离线示例默认输出旁挂字幕，烧录可显式选择字幕方式与字体。
-- 根 README 面向 CLI＋Skill；原 Web 使用说明保留在 `WEB.md`。
+## CLI 0.3.0 · 2026-11-18
+
+### 新增
+
+- CLI 源码（`runtime/notetofilm_local/`）、安装器、配置样例和测试纳入仓库，源码入口为 `scripts/ntf.py`。七个 Skill 的唯一源码在 `.agents/skills/`，公共说明从 `shared/` 同步。分发包按组件清单收集文件，可在源码目录外安装命令与技能；回归包含真实分发、独立安装与合成。
+- `scripts/build_binary.py`：用 PyInstaller 构建 `dist/ntf`（指向 `dist/ntf-runtime/ntf`），审阅服务可从可执行程序启动。
+- `ntf sheet`：按时间抽帧生成 JPEG 联系表，每格标注实际源时间与镜头 ID，可查看全片、每个剪点前后或指定时段。
+- `ntf inspect --scan`：报告冻结、黑场和静音区间，可按时间表标注镜头。
+- `ntf web-render`：把提供 `window.render(t)` 的项目内网页逐帧渲染为无声视频并登记采用。支持静帧预览与 `--text-check`（标出文字出界、重叠、过小）、跨渲染顺序的确定性比对、相同输入复用、`--dpr`、`--subframes`／`--shutter` 与 `--grain`。需要 `web` 可选依赖（Playwright）及 Chromium 或本机 Chrome。
+- 合成：`subtitles_mode: embed` 输出可切换的内封字幕轨；`audio_tracks: dual` 输出旁白混音与原声两条音轨；镜头可用 `native_subtitles_path` 提供原声字幕，作为第二条字幕轨。Pillow 配字烧录保留全部音轨。
+- 连接来源：环境变量优先，其次 NoteToFilm 根目录 `.env`（启动时读取，不覆盖已有变量）。连接可声明 `codex_provider`，每次请求即时读取 Codex 配置中的地址与令牌，令牌不进入项目快照。`ntf routes` 显示每条路由的地址与凭据来源。
+- 视频：`newapi-video` 支持 `return_last_frame`（尾帧经原厂任务记录取得，登记为 `last_frame` 图片素材）与 `seed`；新增 Seedance 2.5 路由样例。
+- 图片：`gpt-image-2.6-sunburst` 路由按 GPT Image 能力声明参数（数量、自定义尺寸规则、质量、透明背景、格式、压缩、审核级别，参考图最多 16 张）。`reference_to_image` 支持 `mask` 局部修改，路由用 `supports_mask` 与 `custom_size` 声明。
+- direct：常见默认做法与修正；风格库收录工程蓝图、等距信息图、数据动态、白板讲解、杂志拼贴、铜版画、瑞士网格，每种附在 NoteToFilm 中的制作方式；风格配方模板；音画表加入对标、候选结构、段落卡和转场对。
+- prepare 为可讲事实编号，旁白注明依据；video 增加尾帧接力。
+- compose：代码动画骨架（同位对照示例、本镜时间表，`motion.js` 含 `beats`、`revealOn`）、代码动画手法库与写法、本机工具箱（分屏、画中画、宫格保留指定原声，图文排版与素材加工）。
+- 文档：`docs/` 新增文档索引、工作原理、开发与发版、常见错误与处理；通道配置说明开头增加接入步骤。
+- 许可：以 GPL-3.0-or-later 发布（`LICENSE`）。改编自 garden-skills（MIT）的内容及位置见 `THIRD_PARTY_NOTICES.md`。
+
+### 变更
+
+- 对外名称统一为 NoteToFilm CLI（命令 `ntf`）：`--version` 输出 `NoteToFilm CLI <版本>`，帮助说明与请求的 `User-Agent: NoteToFilm-CLI/<版本>` 同步。Python 包名、模块名与插件名保持 `notetofilm-local`。
+- 2.0 视频路由改用 `doubao-seedance-2-0-fast-260128`（路由 `company-seedance-2-0-fast`）。内置模型清单加入 `gpt-image-2.6-sunburst`，`config-init` 生成七条路由。CPA＋UniAPI 样例的默认路由改为 GPT Image 2.6 Sunburst 与 Seedance 2.5。
+- 离线示例默认输出旁挂字幕，烧录需显式选择字幕方式与字体。
+- Pillow 字幕与配字换行时，句末标点留在行尾，左括号随后文换行，英文单词和数字不拆开。
+- compose 交付检查改为用联系表按时间看全片、剪点和关键变化；video 选片改用联系表定位可用区间。
+- README 改为 CLI＋Skill 说明，并去掉 Hugging Face Space 配置头（恢复 Web 部署时需加回）；Web 使用说明在 `WEB.md`。
+- 源码包加入 `CHANGELOG.md`。
+- 构建后端要求 setuptools 77 及以上。
+- CI 在推送和 PR 时只运行 CLI 回归；Web 回归改为手动触发。
 
 ## Web · 未发布
 
@@ -16,7 +41,7 @@
 - 恢复时发现上游素材损坏，会为已有下游队列补齐依赖，等待新上游图片发布后再生成。
 - 修改上游图片来源时，预演正确计算下游图片请求数及确认失效；多个单镜编辑器可独立预演，取消编辑后忽略过期响应。
 
-## v0.4.0 · 2026-10-17
+## Web v0.4.0 · 2026-10-17
 
 - 分镜修改影响规则抽取为服务端纯函数（`app/domain/plan_impact.py`、`app/domain/references.py`），保存与素材发布共用同一份判定；前端删除重复规则。
 - 新增只读预演接口 `POST /api/v1/tasks/{id}/plan/impact`：请求与保存一致，返回每镜图片/配音动作、确认是否保留、上游失效标记和保存后所需生图请求数；不写库、不触发快照、不调用模型，并与保存共享所有权、状态与版本校验。
@@ -27,7 +52,7 @@
 - 旧完整配置缺失并发键时自动补默认，未知字段仍拒绝；保存后需重启生效。
 - 升级前按第 6 节留存 v9 快照与配置原件；严格回归 263 项全绿（新增作业台账与调度器并发测试）。
 
-## v0.3.0 · 2026-10-16
+## Web v0.3.0 · 2026-10-16
 
 - 完整明文 TOML 独立保存管理员令牌、模型密钥、网关、运行限制和存储设置；已有文件优先，支持一次性导入旧环境配置。
 - 新增私有 config bucket 与 data bucket。SQLite 在本地运行，每次写入生成一致性快照，媒体完成上传后才发布快照清单；重建时校验摘要并恢复。
@@ -37,7 +62,7 @@
 
 数据库仍为 schema v9。旧 HF 临时盘部署必须先备份完整数据再重建；两个 bucket 使用单实例写入。
 
-## v0.2.0 · 2026-10-16
+## Web v0.2.0 · 2026-10-16
 
 - 连续预览支持上一镜、下一镜、镜头跳转、时间位置和定位编辑；缺少图音时停在对应镜头，素材版本变化时暂停。
 - 单镜修改显示素材更新范围及配音实际时长；总时长超限时可直接定位到需要修改的镜头。

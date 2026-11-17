@@ -34,6 +34,12 @@ def run():
     )
     if synchronized.returncode:
         return synchronized.returncode
+    # Keep tests away from real credentials: no project .env, an empty Codex home.
+    import os, tempfile
+    os.environ['NTF_ENV_FILE'] = os.devnull
+    os.environ['CODEX_HOME'] = tempfile.mkdtemp(prefix='ntf-test-codex-')
+    for name in [key for key in os.environ if key.startswith(('NTF_CPA_', 'NTF_UNIAPI_', 'NTF_COMPANY_'))]:
+        os.environ.pop(name)
     sys.path.insert(0, str(ROOT / 'runtime'))
     suite = unittest.defaultTestLoader.discover(str(ROOT / 'tests/cli'))
     result = unittest.TextTestRunner(verbosity=2).run(suite)

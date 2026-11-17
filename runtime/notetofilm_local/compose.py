@@ -69,8 +69,11 @@ def _settings(manifest):
     if not math.isfinite(fps) or not 1 <= fps <= 120:
         raise NTFError("compose_invalid", "Output fps must be between 1 and 120.")
     mode = raw.get("subtitles_mode", "sidecar")
-    if mode not in ("sidecar", "burn", "none"):
-        raise NTFError("compose_invalid", "subtitles_mode must be sidecar, burn, or none.")
+    if mode not in ("sidecar", "burn", "embed", "none"):
+        raise NTFError("compose_invalid", "subtitles_mode must be sidecar, burn, embed, or none.")
+    audio_tracks = raw.get("audio_tracks", "single")
+    if audio_tracks not in ("single", "dual"):
+        raise NTFError("compose_invalid", "audio_tracks must be single or dual.")
     font = raw.get("subtitle_font", "sans-serif")
     if not isinstance(font, str) or not re.fullmatch(r"[\w .-]{1,100}", font):
         raise NTFError("compose_invalid", "subtitle_font must be a plain font family name.")
@@ -92,7 +95,7 @@ def _settings(manifest):
         if not -70 <= loudness <= -5:
             raise NTFError('compose_invalid', 'audio_loudness_lufs must be between -70 and -5.')
     return {"width": width, "height": height, "fps": fps, "fps_expression": str(fps_fraction),
-            "subtitles_mode": mode, "subtitle_font": font, "subtitle_font_size": font_size,
+            "subtitles_mode": mode, "audio_tracks": audio_tracks, "subtitle_font": font, "subtitle_font_size": font_size,
             "subtitle_renderer": renderer, "subtitle_font_file": font_file,
             "audio_loudness_lufs": loudness, "audio_true_peak_db": peak}
 
@@ -262,6 +265,16 @@ def _plan_scene(root, raw, settings, start, cache):
                                {"cue_start_seconds": local_start, "cue_end_seconds": local_end, "scene_duration_seconds": duration})
             cues.append({**cue, "scene_id": scene_id, "start_seconds": start + max(0, local_start),
                          "end_seconds": start + local_end})
+    native_cues, native_subtitle_path = [], None
+    if raw.get("native_subtitles_path"):
+        native_subtitle_path = project_path(root, raw["native_subtitles_path"])
+        for cue in read_subtitles(native_subtitle_path):
+            if cue["start_seconds"] < -1e-6 or cue["end_seconds"] > duration + 0.001:
+                raise NTFError("subtitle_out_of_range", f"Scene {scene_id}: native subtitle timing lies outside the actual scene window.",
+                               {"cue_start_seconds": cue["start_seconds"], "cue_end_seconds": cue["end_seconds"],
+                                "scene_duration_seconds": duration})
+            native_cues.append({**cue, "scene_id": scene_id, "start_seconds": start + max(0, cue["start_seconds"]),
+                                "end_seconds": start + cue["end_seconds"]})
     overlays = raw.get("text_overlays", [])
     if not isinstance(overlays, list):
         raise NTFError("compose_invalid", "text_overlays must be an array.")
@@ -283,7 +296,8 @@ def _plan_scene(root, raw, settings, start, cache):
             "visuals": visuals, "audio": audio, "audio_policy": policy, "native_volume": native_volume,
             "subtitles_path": str(subtitle_path) if subtitle_path else None,
             "subtitles_offset_seconds": subtitle_offset, "subtitle_count": len(cues),
-            "text_overlays": planned_overlays}, cues
+            "native_subtitles_path": str(native_subtitle_path) if native_subtitle_path else None,
+            "native_subtitles": native_cues, "text_overlays": planned_overlays}, cues
 
 
 def _ffmpeg():
@@ -419,6 +433,70 @@ def _join_scenes(paths, scenes, settings, output):
     run_media_command(args)
 
 
+def _render_native_audio(scene, directory):
+    """The scene's original video sound at full level, on the same windows and speed as the picture."""
+    parts = []
+    for index, visual in enumerate(scene["visuals"]):
+        output = directory / f"native_{index:04d}.wav"
+        duration = _seconds(visual["duration_seconds"])
+        args = _ffmpeg()
+        if visual["kind"] == "video" and visual["metadata"]["has_audio"]:
+            tempo = _tempo(visual["speed"])
+            chain = (f"[0:a:0]asetpts=PTS-STARTPTS,atrim=start={_seconds(visual['trim_start'])}:"
+                     f"duration={_seconds(visual['source_used_seconds'])},asetpts=PTS-STARTPTS,"
+                     + (tempo + "," if tempo else ""))
+            args += ["-i", visual["path"]]
+        else:
+            chain = "[0:a:0]"
+            args += ["-f", "lavfi", "-i", f"anullsrc=r=48000:cl=stereo:d={duration}"]
+        chain += ("aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                  f"apad,atrim=duration={duration},asetpts=PTS-STARTPTS[a]")
+        run_media_command(args + ["-filter_complex", chain, "-map", "[a]", "-c:a", "pcm_s16le",
+                                  "-ar", "48000", "-ac", "2", str(output)])
+        parts.append(output)
+    listing = directory / "native.txt"
+    _concat_list(parts, listing)
+    final = directory / "native.wav"
+    run_media_command(_ffmpeg() + ["-f", "concat", "-safe", "1", "-i", str(listing), "-c", "copy",
+                                    "-t", _seconds(scene["duration_seconds"]), str(final)])
+    return final
+
+
+def _join_audio(paths, scenes, output):
+    """Join scene audio with the same cuts and crossfades as the picture."""
+    args, graph = _ffmpeg(), []
+    for index, path in enumerate(paths):
+        args += ["-i", str(path)]
+        graph.append(f"[{index}:a:0]asetpts=PTS-STARTPTS[a{index}]")
+    audio = "a0"
+    for index, scene in enumerate(scenes[1:], 1):
+        transition, joined = scene["transition"], f"joined{index}"
+        if transition["type"] == "cut":
+            graph.append(f"[{audio}][a{index}]concat=n=2:v=0:a=1[{joined}]")
+        else:
+            graph.append(f"[{audio}][a{index}]acrossfade=d={_seconds(transition['duration_seconds'])}:c1=tri:c2=tri[{joined}]")
+        audio = joined
+    total = _seconds(scenes[-1]["end_seconds"])
+    graph.append(f"[{audio}]apad,atrim=duration={total},asetpts=PTS-STARTPTS[aout]")
+    run_media_command(args + ["-filter_complex", ";".join(graph), "-map", "[aout]", "-c:a", "pcm_s16le",
+                              "-ar", "48000", "-ac", "2", str(output)])
+
+
+def _embed_subtitles(source, tracks, output):
+    """Copy all picture and sound streams and add switchable mov_text subtitle tracks."""
+    args = _ffmpeg() + ["-i", str(source)]
+    for path, _ in tracks:
+        args += ["-i", str(path)]
+    args += ["-map", "0:v", "-map", "0:a"]
+    for index, (_, title) in enumerate(tracks, 1):
+        args += ["-map", f"{index}:s:0"]
+    args += ["-c:v", "copy", "-c:a", "copy", "-c:s", "mov_text"]
+    for index, (_, title) in enumerate(tracks):
+        args += [f"-metadata:s:s:{index}", f"handler_name={title}", f"-metadata:s:s:{index}", "language=chi",
+                 f"-disposition:s:{index}", "default" if index == 0 else "0"]
+    run_media_command(args + ["-movflags", "+faststart", str(output)])
+
+
 def compose(project_root: Path, manifest: dict, output_dir: Path, render: bool = True) -> dict:
     """Plan and optionally render an explicit scene manifest.
 
@@ -467,14 +545,19 @@ def compose(project_root: Path, manifest: dict, output_dir: Path, render: bool =
         cues.extend(local_cues)
         cursor = scene["end_seconds"]
     cues.sort(key=lambda cue: (cue["start_seconds"], cue["end_seconds"]))
+    native_cues = sorted((cue for scene in scenes for cue in scene["native_subtitles"]),
+                         key=lambda cue: (cue["start_seconds"], cue["end_seconds"]))
     from .audio_post import plan_background, final_audio_arguments
     background = plan_background(root, manifest.get('background_audio'), cursor, cache)
     video_path = output_dir / "video.mp4"
     timeline_path = output_dir / "timeline.json"
     subtitle_path = output_dir / "subtitles.srt" if cues and settings["subtitles_mode"] != "none" else None
+    native_subtitle_path = (output_dir / "native_subtitles.srt"
+                            if native_cues and settings["subtitles_mode"] != "none" else None)
     inputs = {Path(path) for path in cache}
     inputs.update(Path(s["subtitles_path"]) for s in scenes if s["subtitles_path"])
-    for generated in (video_path, timeline_path, subtitle_path):
+    inputs.update(Path(s["native_subtitles_path"]) for s in scenes if s["native_subtitles_path"])
+    for generated in (video_path, timeline_path, subtitle_path, native_subtitle_path):
         if generated and generated in inputs:
             raise NTFError("output_input_collision", "Output files must not replace source media or subtitles.")
     if any(path.is_relative_to(output_dir) for path in inputs):
@@ -485,14 +568,18 @@ def compose(project_root: Path, manifest: dict, output_dir: Path, render: bool =
         raise NTFError("compose_invalid", "output_dir is not a directory.")
     output_dir.mkdir(parents=True, exist_ok=True)
     timeline = {"schema_version": 1, "status": "planned", "output": settings, "duration_seconds": cursor,
-                "scenes": scenes, "subtitles": cues,
+                "scenes": scenes, "subtitles": cues, "native_subtitles": native_cues,
                 "background_audio": background,
                 "timing_source": "actual media metadata; output windows rounded up to complete frames"}
     if subtitle_path:
         subtitle_path.write_text(subtitles_text(cues), encoding="utf-8")
+    if native_subtitle_path:
+        native_subtitle_path.write_text(subtitles_text(native_cues), encoding="utf-8")
     timeline_path.write_text(json.dumps(timeline, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     result = {"video_path": None, "mp4_path": None, "timeline_path": str(timeline_path),
               "subtitles_path": str(subtitle_path) if subtitle_path else None,
+              "native_subtitles_path": str(native_subtitle_path) if native_subtitle_path else None,
+              "audio_tracks": settings["audio_tracks"],
               "duration_seconds": cursor, "scenes": scenes, "rendered": False}
     if not render:
         return result
@@ -522,11 +609,21 @@ def compose(project_root: Path, manifest: dict, output_dir: Path, render: bool =
             picture_input = ["-f", "concat", "-safe", "1", "-i", str(listing)]
         partial = output_dir / "video.partial.mp4"
         audio_inputs, audio_filters = final_audio_arguments(settings, background, cursor)
-        args = _ffmpeg() + picture_input + audio_inputs + ['-map', '0:v:0']
+        native_input = []
+        if settings["audio_tracks"] == "dual":
+            native_parts = [_render_native_audio(scene, segment_root / f"scene_{i:04d}") for i, scene in enumerate(scenes)]
+            native_track = segment_root / "native_full.wav"
+            _join_audio(native_parts, scenes, native_track)
+            native_input = ['-i', str(native_track)]
+        args = _ffmpeg() + picture_input + audio_inputs + native_input + ['-map', '0:v:0']
         if audio_filters:
             args += ['-filter_complex', audio_filters, '-map', '[master]']
         else:
             args += ['-map', '0:a:0']
+        if native_input:
+            args += ['-map', f"{1 + audio_inputs.count('-i')}:a:0",
+                     '-metadata:s:a:0', 'handler_name=旁白混音', '-metadata:s:a:0', 'language=chi', '-disposition:a:0', 'default',
+                     '-metadata:s:a:1', 'handler_name=原声', '-metadata:s:a:1', 'language=chi', '-disposition:a:1', '0']
         if text_renderer == "libass":
             style = (f"FontName={settings['subtitle_font']},FontSize={_seconds(settings['subtitle_font_size'])},"
                      "Outline=1,MarginV=16")
@@ -541,6 +638,12 @@ def compose(project_root: Path, manifest: dict, output_dir: Path, render: bool =
             with_text = output_dir / "video.text.partial.mp4"
             burn_text(partial, with_text, root, settings, cursor, burn_cues, overlay_events)
             partial = with_text
+        if settings["subtitles_mode"] == "embed":
+            tracks = [(path, title) for path, title in ((subtitle_path, "旁白字幕"), (native_subtitle_path, "原声字幕")) if path]
+            if tracks:
+                with_subtitles = output_dir / "video.subtitles.partial.mp4"
+                _embed_subtitles(partial, tracks, with_subtitles)
+                partial = with_subtitles
         actual = probe(partial)
         if abs(actual["duration_seconds"] - cursor) > max(0.1, 1.1 / settings["fps"]):
             raise NTFError("render_duration_mismatch", "Rendered duration differs from the planned frame timeline.",

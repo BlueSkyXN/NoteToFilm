@@ -16,13 +16,13 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-ROOT_FILES = {"plugin.json", "README.md", ".gitignore", "pyproject.toml", "LICENSE", "LICENSE.md"}
+ROOT_FILES = {"plugin.json", "README.md", "CHANGELOG.md", ".gitignore", "pyproject.toml", "LICENSE", "LICENSE.md", "THIRD_PARTY_NOTICES.md"}
 SKILL_NAMES = tuple(f"notetofilm-{name}" for name in ("workflow", "prepare", "direct", "image", "video", "audio", "compose"))
 COMPONENTS = (
     *[f".agents/skills/{name}" for name in SKILL_NAMES],
     "runtime", "shared", "configs", "docs", "tests/cli",
     "scripts/ntf.py", "scripts/install.py", "scripts/package.py",
-    "scripts/sync_skill_references.py", "scripts/check_cli.py",
+    "scripts/sync_skill_references.py", "scripts/check_cli.py", "scripts/build_binary.py",
     "examples/create_media_fixture.py", "examples/MEDIA_FIXTURE.md",
 )
 OMIT_PARTS = {"__pycache__", ".pytest_cache", ".git", ".venv", "venv", "node_modules", "dist", "build", "work"}
