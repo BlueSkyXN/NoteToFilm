@@ -47,7 +47,7 @@ ffmpeg -i clip.mp4 -filter_complex \
  -map "[v]" -map 0:a -c:v libx264 -crf 17 -pix_fmt yuv420p -c:a copy clean.mp4
 ```
 
-处理后取同一时刻的帧对比，确认字已看不清、模糊块不显眼。镜头在推拉或横移时文字位置一直变化，固定区域遮不住，改为重新生成或换镜头。
+处理后用 `ntf compare clip.mp4@时刻 clean.mp4@时刻 --crop 区域 --cell-width 640` 放大对比，确认字已看不清、模糊块不显眼。镜头在推拉或横移时文字位置一直变化，固定区域遮不住，改为重新生成或换镜头。
 
 ### 房间底噪与停顿电平
 
@@ -59,7 +59,7 @@ ffmpeg -f lavfi -i "anoisesrc=color=brown:amplitude=0.5:seed=7:sample_rate=48000
 ffmpeg -i roomtone.wav -af astats=metadata=0 -f null - 2>&1 | grep 'RMS level'   # 目标约 -46 dB
 ```
 
-导入后 `--select film.background`，清单里 `"background_audio": {"selection": "film.background", "volume": 1.0, "loop": true}`。抽测某一时刻的电平用采样精确的截取：`ffmpeg -i film.mp4 -map 0:a -af "atrim=start=20.7:duration=0.6,volumedetect" -f null -`；把 `-ss`、`-t` 放在 `-i` 前截取不到一秒的片段时，读数可能不准。
+导入后 `--select film.background`，清单里 `"background_audio": {"selection": "film.background", "volume": 1.0, "loop": true}`。合成后用 `ntf inspect FILM --scan` 确认各静音区间的 `digital_silence_seconds` 为 0。抽测某一时刻的电平用采样精确的截取：`ffmpeg -i film.mp4 -map 0:a -af "atrim=start=20.7:duration=0.6,volumedetect" -f null -`；把 `-ss`、`-t` 放在 `-i` 前截取不到一秒的片段时，读数可能不准。
 
 本机 FFmpeg 若没有 `drawtext` 和 `subtitles` 滤镜，文字用合成清单的 `text_overlays`、`ntf motion` 或 ImageMagick 生成。
 

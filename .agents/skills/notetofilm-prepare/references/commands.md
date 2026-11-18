@@ -17,6 +17,7 @@
 | 估算旁白或应用实测片长 | `ntf timing PROJECT --mode estimate` / `ntf timing PROJECT --apply --min-seconds 4 --max-seconds 15 --preserve-planned` |
 | 看当前可执行项 | `ntf ready PROJECT` |
 | 看进展与输入变化 | `ntf status PROJECT` |
+| 汇总各通道的生成量 | `ntf status PROJECT --usage` |
 | 执行或继续具体动作 | `ntf run PROJECT --action ID --config FILE --wait-seconds 20` |
 | 明确重做已完成动作 | `ntf run PROJECT --action ID --config FILE --force` |
 | 采用指定素材 | `ntf select PROJECT SLOT ASSET_ID` |
@@ -29,6 +30,9 @@
 | 探测媒体、完整解码与JPEG抽帧 | `ntf inspect FILE --decode --frames 3 --output DIR --max-width 960` |
 | 标出冻结、黑场和静音区间 | `ntf inspect FILE --scan [--timeline TIMELINE]` |
 | 按时间看视频的联系表 | `ntf sheet FILE --output DIR [--timeline TIMELINE] [--fps 2]` |
+| 多个视频同时刻并排、候选图宫格 | `ntf compare A.mp4 B.mp4 --at 3 --at 9 --output DIR` / `ntf compare a.png b.png c.png --output DIR` |
+| 剪点两侧叠图核对位置 | `ntf compare prev.mp4@11.0 next.mp4@0.1 --overlay --output DIR` |
+| 局部放大查小字和细节 | `ntf compare clip.mp4@12.2 --crop 0.1,0.75,0.45,0.15 --cell-width 640 --output DIR` |
 | 看每个剪点前后 | `ntf sheet FILE --output DIR --timeline TIMELINE --cuts --fps 8` |
 | 复看指定时段 | `ntf sheet FILE --output DIR --start 12 --end 16 --fps 8` |
 | 网页动画静帧预览与确定性检查 | `ntf web-render PROJECT --page animation/s02 --scene s02 --preview-time 1 --preview-time 3.5` |
@@ -77,6 +81,10 @@ PROJECT 与文件参数都传具体路径。动作 ID 从计划或 `ready` 结�
 
 `web-render` 打开项目内提供 `window.render(t)` 的页面，按项目画幅和帧率逐帧截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）；时长默认读页面的 `window.DUR`。页面脚本里写了 `READY = …` 时，等到 `window.READY === true` 才开始截图；没有写时，`render` 出现即开始。`--preview-time` 可重复，只输出静帧，并按另一种渲染顺序比对画面是否只由时间决定；加 `--text-check` 时报告文字出界、重叠和过小并输出标注图。渲染可加 `--dpr`（超采样，1–3）、`--subframes`（子帧运动模糊，1–8，`--shutter` 调快门比例）和 `--grain`（编码时叠加颗粒，0–40）。页面目录内容与参数不变时复用已有素材，`--force` 另生成新版本。需要 Playwright（web 可选依赖）和 Chromium 或本机 Chrome；页面写法在 compose Skill 的代码动画说明。
 
-`inspect --scan` 报告冻结（默认持续 1 秒以上，`--freeze-seconds`）、黑场和静音（默认 0.5 秒以上，`--silence-seconds`）区间，带 `--timeline` 时标注所在镜头。结果是查看提示，不影响 verification；静态画面和有意停留同样会出现在冻结中。
+`inspect --scan` 报告冻结（默认持续 1 秒以上，`--freeze-seconds`）、黑场和静音（低于 -35 dB，默认 0.5 秒以上，`--silence-seconds`）区间，带 `--timeline` 时标注所在镜头。每个静音区间带 `digital_silence_seconds`：其中低于 -70 dB 的秒数，大于 0 说明声音在那里断成了数字静音，等于 0 通常是铺了底噪的正常停顿。结果是查看提示，不影响 verification；静态画面和有意停留同样会出现在冻结中。
+
+`compare` 把图片和视频画面排成一张 `compare.jpg`，同时写 `compare.json`：视频按 `--at` 每个时刻一格、每个视频一行；`FILE@秒数` 只取这一帧；全部是单帧时按 `--columns` 排成宫格。`--overlay` 把各输入的一帧等权叠合，用来核对剪点两侧对象是否对齐；`--crop x,y,宽,高`（0–1 比例）对每个画面裁同一区域再放大，用来查伪文字和细节。标签默认是序号加文件名，中文标签需要 `--font-file`。输出目录须为空。
+
+`status --usage` 按通道汇总图片和视频的请求数、各状态次数、返回的媒体数与视频秒数、分辨率，以及被成片清单引用的数量。失败或结果不明的请求也可能计费；金额按该通道自己的计费方式折算，再与账号用量核对。复制进动画页面或在外部加工后重新导入的素材，不计入“被成片引用”。
 
 `install-info --require-audio --require-render --font-file FONT`可检查实际入口的依赖与字体可读性，失败同样返回非零退出码。字体内容、画面语义和叙事效果仍需审阅。

@@ -12,6 +12,12 @@ CLI 与 Web 分别编号，版本号遵循语义化版本。
 - `ntf web-render`：页面脚本写了 `READY` 赋值时，等到 `window.READY === true` 才开始截图，避免异步准备的资源被提前截图。
 - 字幕与动效文字：新增 `subtitle_font_index`（`ntf settings --font-index`、`install-info --font-index`），可选 TTC/OTC 字体合集中的字形；默认 0 与原行为一致，`ntf motion` 只在非 0 时写入设置，已有动效的复用不受影响。
 
+### 新增
+
+- `ntf compare`：把多个图片或视频画面排成对比表；视频按 `--at` 时刻每行一条，`FILE@秒数` 取单帧，单帧输入排成宫格；`--overlay` 等权叠合核对剪点两侧位置；`--crop` 对所有画面裁同一区域放大查看小字与细节。
+- `ntf status PROJECT --usage`：按通道汇总图片与视频的请求数、各状态次数、返回媒体数、视频秒数、分辨率和被成片清单引用的数量，用于按通道计费核对花费。
+- `ntf inspect --scan`：每个静音区间附 `digital_silence_seconds`（其中低于 -70 dB 的秒数），区分数字静音和铺了底噪的正常停顿。
+
 ### 修复
 
 - 生成请求的 `output`（如 `count`）可以覆盖路由默认值；`parameters`、`output` 与顶层 `duration_seconds` 之间给出不同值时仍报 `parameter_conflict`。
@@ -28,6 +34,7 @@ CLI 与 Web 分别编号，版本号遵循语义化版本。
 - video：生成步骤写明提示词禁字，并在构图上避开标注区。
 - 风格库：工程蓝图的标题栏只写对象名称或结论；铜版画的编号须对应图例；视觉语言中的性质说明写在备稿。
 - 文档：`docs/development.md` 增加端到端制作验证的做法（新会话只依靠 Skill、隔轮换材料、核对费用）。
+- 审片工具接入 Skill：候选图宫格、方向样片对比、剪点叠图、局部放大查字改用 `ntf compare`；交付检查读取 `digital_silence_seconds`；workflow 交付时用 `--usage` 说明生成量；Seedance 提示词按秒分段的实测结论写入通道说明；video 恢复说明补充多条候选共用一次 `--poll-only --wait-seconds` 等待，以及等待期间不要并行执行写状态的命令。
 
 ## CLI 0.3.0 · 2026-11-18
 

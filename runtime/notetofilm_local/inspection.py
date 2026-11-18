@@ -39,6 +39,16 @@ def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline
                               [float(v) for v in re.findall(r'silence_end: ' + number, log)], duration)
         if info.get('has_audio') else None,
     }
+    if found['silence']:
+        # A second, audio-only pass separates digital silence (dropped sound) from quiet room tone.
+        quiet = run_media_command(['ffmpeg', '-hide_banner', '-nostdin', '-i', str(source), '-vn',
+                                   '-af', 'silencedetect=n=-70dB:d=0.2', '-f', 'null', '-'], timeout=900).stderr
+        digital = _intervals([float(v) for v in re.findall(r'silence_start: ' + number, quiet)],
+                             [float(v) for v in re.findall(r'silence_end: ' + number, quiet)], duration)
+        for item in found['silence']:
+            overlap = sum(max(0.0, min(item['end_seconds'], d['end_seconds']) - max(item['start_seconds'], d['start_seconds']))
+                          for d in digital)
+            item['digital_silence_seconds'] = round(overlap, 3)
     if timeline:
         from .io import read_json
         from .preview import _timeline
@@ -48,7 +58,9 @@ def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline
                 item['scene_ids'] = [sid for sid, (a, b) in windows.items()
                                      if a < item['end_seconds'] and b > item['start_seconds']]
     found['thresholds'] = {'freeze_seconds': freeze_seconds, 'black_seconds': .2,
-                           'silence_seconds': silence_seconds if info.get('has_audio') else None}
+                           'silence_seconds': silence_seconds if info.get('has_audio') else None,
+                           'silence_db': -35 if info.get('has_audio') else None,
+                           'digital_silence_db': -70 if info.get('has_audio') else None}
     return found
 
 
