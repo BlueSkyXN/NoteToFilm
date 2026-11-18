@@ -194,6 +194,11 @@ def plan_motion(project, manifest, *, scene_ids=None, stage='all', select_prefix
         font = Path(font).expanduser()
         font = (font if font.is_absolute() else project.root/font).resolve()
     settings['font_file'] = str(font) if font else None
+    font_index = resolved.get('font_index', output.get('subtitle_font_index', 0))
+    if isinstance(font_index, bool) or not isinstance(font_index, int) or font_index < 0:
+        raise NTFError('motion_invalid', 'font_index 须为非负整数（字体合集中的字形序号）。')
+    if font_index:
+        settings['font_index'] = font_index   # 只在非默认值时写入，旧动效的复用指纹不变
     scenes, seen = [], set()
     for raw in resolved['scenes']:
         if not isinstance(raw,dict): raise NTFError('motion_invalid', '每个 scene 须为对象。')
@@ -225,11 +230,12 @@ def plan_motion(project, manifest, *, scene_ids=None, stage='all', select_prefix
     uses_text = any(obj['type']=='text' for scene in scenes for layer in scene['layers'] for obj in layer.get('objects',[]))
     if uses_text:
         if not font or not font.is_file(): raise NTFError('font_missing', '文字图层需要可读取的 font_file。')
-        try: motion_render.ImageFont.truetype(str(font),32)
-        except OSError as exc: raise NTFError('font_invalid','无法读取 font_file 字体。') from exc
+        try: motion_render.ImageFont.truetype(str(font),32,index=font_index)
+        except OSError as exc: raise NTFError('font_invalid','无法读取 font_file 字体，或 font_index 超出字体合集范围。') from exc
         settings['font_sha256'] = file_digest(font)
     else:
         settings['font_file'] = None
+        settings.pop('font_index', None)
     return {'schema_version':1,'stage':stage,'settings':settings,'scenes':scenes,'audio':'silent visuals; compose handles audio'}
 
 

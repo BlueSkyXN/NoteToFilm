@@ -34,6 +34,7 @@ def parser():
     info.add_argument('--require-audio', action='store_true')
     info.add_argument('--require-render', action='store_true')
     info.add_argument('--font-file')
+    info.add_argument('--font-index', type=int, default=0, help='Face index inside a TTC/OTC font collection')
     imp = commands.add_parser("import", help="Copy actual media into the project and register it")
     imp.add_argument("project")
     imp.add_argument("file")
@@ -53,6 +54,7 @@ def parser():
     settings.add_argument("--audio-tracks", choices=["single", "dual"])
     settings.add_argument("--subtitle-renderer", choices=["auto", "libass", "pillow"])
     settings.add_argument("--font-file")
+    settings.add_argument("--font-index", type=int, help="Face index inside a TTC/OTC font collection (default 0)")
     settings.add_argument("--font-size", type=float)
     settings.add_argument('--loudness-lufs', type=float)
     settings.add_argument('--true-peak-db', type=float)
@@ -310,7 +312,7 @@ def dispatch(args):
         if args.font_file:
             from .text_overlay import _font
             try:
-                _font(Path.cwd(),{'subtitle_font_file':args.font_file,'subtitle_font_size':13,'height':720})
+                _font(Path.cwd(),{'subtitle_font_file':args.font_file,'subtitle_font_index':args.font_index,'subtitle_font_size':13,'height':720})
                 checks.append({'name':'readable_font','passed':True})
             except NTFError as exc:
                 checks.append({'name':'readable_font','passed':False,'error_code':exc.code})
@@ -334,7 +336,8 @@ def dispatch(args):
         for argument, field_name in (("width", "width"), ("height", "height"), ("fps", "fps"),
                                      ("subtitles", "subtitles_mode"), ("audio_tracks", "audio_tracks"),
                                      ("subtitle_renderer", "subtitle_renderer"),
-                                     ("font_file", "subtitle_font_file"), ("font_size", "subtitle_font_size"),
+                                     ("font_file", "subtitle_font_file"), ("font_index", "subtitle_font_index"),
+                                     ("font_size", "subtitle_font_size"),
                                      ('loudness_lufs','audio_loudness_lufs'),('true_peak_db','audio_true_peak_db')):
             value = getattr(args, argument)
             if value is not None:

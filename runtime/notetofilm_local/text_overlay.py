@@ -42,9 +42,9 @@ def _font(root, settings):
     # Keep the existing ASS-unit size convention consistent across renderers.
     size = max(1, round(settings['subtitle_font_size'] * settings['height'] / 288))
     try:
-        return ImageFont.truetype(str(path), size=size)
+        return ImageFont.truetype(str(path), size=size, index=settings.get('subtitle_font_index', 0))
     except (OSError, ValueError):
-        raise NTFError('text_font_invalid', 'Cannot load output.subtitle_font_file; select a readable TTF, OTF, or TTC font.') from None
+        raise NTFError('text_font_invalid', 'Cannot load output.subtitle_font_file at output.subtitle_font_index; select a readable TTF, OTF, or TTC font and an existing face index.') from None
 
 
 def prepare_text_renderer(root, settings, cues, overlays):

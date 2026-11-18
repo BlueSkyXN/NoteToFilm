@@ -65,6 +65,22 @@ class TextOverlayTests(unittest.TestCase):
         self.assertEqual(failure.exception.code, 'overlay_out_of_range')
 
     @unittest.skipUnless(importlib.util.find_spec('PIL') and FONT, 'Pillow and font required')
+    def test_font_index_selects_collection_face_and_is_validated(self):
+        from notetofilm_local.text_overlay import _font
+        from notetofilm_local.compose import compose
+        settings = {'subtitle_font_file': FONT, 'subtitle_font_size': 13, 'height': 720}
+        with patch('PIL.ImageFont.truetype', return_value='face') as truetype:
+            _font(self.root, dict(settings, subtitle_font_index=2))
+        self.assertEqual(truetype.call_args.kwargs.get('index'), 2)
+        with self.assertRaises(NTFError) as missing:
+            _font(self.root, dict(settings, subtitle_font_index=999))
+        self.assertEqual(missing.exception.code, 'text_font_invalid')
+        manifest = {'output': dict(self.manifest['output'], subtitle_font_index=-1), 'scenes': self.manifest['scenes']}
+        with self.assertRaises(NTFError) as invalid:
+            compose(self.root, manifest, self.root / 'bad-index', render=False)
+        self.assertEqual(invalid.exception.code, 'compose_invalid')
+
+    @unittest.skipUnless(importlib.util.find_spec('PIL') and FONT, 'Pillow and font required')
     def test_missing_font_preflight(self):
         settings = dict(self.manifest['output'], subtitle_font_file=None, subtitle_renderer='auto')
         with patch('notetofilm_local.text_overlay.render_support', return_value={'ffmpeg_subtitles':False,'ffmpeg_overlay':True}):

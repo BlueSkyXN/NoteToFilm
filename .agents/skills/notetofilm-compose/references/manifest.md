@@ -98,7 +98,7 @@ subtitles_mode 为 burn 时，subtitle_renderer 可选 auto、libass、pillow。
 }
 ```
 
-采用的配音带有字幕时，镜头没写 `subtitles_path` 也会自动使用该配音的字幕。画面上已经写着同一句话的镜头（如结论卡、修订卡）不需要字幕时，在该镜写 `"subtitles": false`。`subtitle_font_file` 指向 TTC 合集时只使用其中第一个字形，选第一个字形就合适的字体文件，或改用单一字形的字体文件。
+采用的配音带有字幕时，镜头没写 `subtitles_path` 也会自动使用该配音的字幕。画面上已经写着同一句话的镜头（如结论卡、修订卡）不需要字幕时，在该镜写 `"subtitles": false`。`subtitle_font_file` 指向 TTC/OTC 合集时，用 `subtitle_font_index` 选其中的字形（默认 0，即第一个）；可先用 `ntf install-info --font-file FILE --font-index N` 检查能否读取。`ntf motion` 的文字图层同样读取这两个设置。
 
 字幕时间从真实 SRT/VTT 读取，并跟随 audio.start_seconds 或明确的 subtitles_offset_seconds；text_overlays 使用镜内时间，独立于旁白字幕。position 支持 top-left、top-right、top-center、bottom-left、bottom-right。subtitle_font_size 沿用 ASS 单位，Pillow 按画幅高度换算，13在720p时约33像素。Pillow只换行，不重估字幕时点；渲染后检查字体、遮挡与音画同步。
 

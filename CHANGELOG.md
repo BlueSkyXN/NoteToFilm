@@ -10,6 +10,7 @@ CLI 与 Web 分别编号，版本号遵循语义化版本。
 - 合成：镜头可设 `"subtitles": false`，不显示该镜字幕，也不自动挂接所采用配音的字幕；`ntf plan` 从分镜带入这一字段。
 - `ntf timing --mode estimate`：默认约每秒 4.6 个发音单位并随 `rate` 换算，英文词按两个单位计（原为每个字母一个），按 10 段实测配音校准后平均误差约 4%；`--units-per-second` 改为可选的固定语速。
 - `ntf web-render`：页面脚本写了 `READY` 赋值时，等到 `window.READY === true` 才开始截图，避免异步准备的资源被提前截图。
+- 字幕与动效文字：新增 `subtitle_font_index`（`ntf settings --font-index`、`install-info --font-index`），可选 TTC/OTC 字体合集中的字形；默认 0 与原行为一致，`ntf motion` 只在非 0 时写入设置，已有动效的复用不受影响。
 
 ### 修复
 
@@ -23,7 +24,10 @@ CLI 与 Web 分别编号，版本号遵循语义化版本。
 - video：做不出可信尾帧时用首帧生视频写明结束状态；Seedance 原生声音不能当连续底声。
 - audio：说明逐词字幕的切分规则与估时校准。
 - compose：代码动画骨架开头声明 `window.READY = false`；相邻页面与视频切入的衔接方法；一个页面跨两镜引用；工具箱新增局部去字、房间底噪与停顿电平测量；交付检查加入查字与停顿电平；说明 `subtitles: false` 与 TTC 字体。
-- prepare：完整制作时材料缺受众、用途或时长，在 brief 写明本轮假设。
+- prepare、audio：完整制作时材料缺受众、用途或时长，在 brief 写明本轮假设；第一人称旁白的叙述者音色先请用户确认，不从姓名推断。
+- video：生成步骤写明提示词禁字，并在构图上避开标注区。
+- 风格库：工程蓝图的标题栏只写对象名称或结论；铜版画的编号须对应图例；视觉语言中的性质说明写在备稿。
+- 文档：`docs/development.md` 增加端到端制作验证的做法（新会话只依靠 Skill、隔轮换材料、核对费用）。
 
 ## CLI 0.3.0 · 2026-11-18
 
