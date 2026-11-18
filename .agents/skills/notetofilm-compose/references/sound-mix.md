@@ -37,7 +37,7 @@ ffmpeg -f lavfi -i "anoisesrc=color=pink:duration=0.6:seed=9:sample_rate=48000" 
 
 ## 按时间表预混底声
 
-先得到全片的时间安排：`ntf compose PROJECT --manifest FILE --plan-only` 输出的 JSON 和合成后的 `timeline.json` 结构相同，都可以用。把下面的脚本存进项目（例如 `work/premix_bed.py`），用 NoteToFilm CLI 的 Python 或系统 Python 运行，只依赖标准库和 FFmpeg。
+先用 `ntf compose PROJECT --manifest FILE --plan-only` 得到全片的时间安排。脚本所需的 `duration_seconds` 和 `scenes` 可从命令输出的 JSON 或合成后的 `timeline.json` 读取。把下面的脚本存进项目（例如 `work/premix_bed.py`），用 NoteToFilm CLI 的 Python 或系统 Python 运行，只依赖标准库和 FFmpeg。
 
 ```python
 """按合成时间表预混一条底声：房间底噪、定时音效，以及在旁白处让位的音乐。"""
@@ -127,5 +127,5 @@ ntf import PROJECT work/bed-v1.wav --select film.background
 ## 检查
 
 - `ntf inspect FILM --decode --audio-check` 看整体响度和真峰值；`ntf inspect FILM --scan --timeline TIMELINE` 的静音区间核对底声是否连续，`digital_silence_seconds` 应只出现在有意的黑场或静默处。
-- 抽测某一段的电平用采样精确的截取：`ffmpeg -i film.mp4 -map 0:a -af "atrim=start=20.7:duration=0.6,astats=metadata=0" -f null -`，比较旁白段和停顿段，确认音乐在说话时确实低下去了。
+- 验证音乐让位时，用同一份时间表单独预混两条音乐检查轨。只传 `--music`，一条使用计划中的 `--duck-db`，另一条设 `--duck-db 0`，分别输出到新文件。用 `ffmpeg -i work/music-duck.wav -map 0:a:0 -af "atrim=start=20.7:duration=0.6,astats=metadata=0" -f null -` 读取 `RMS level dB`。两条轨都截取时间表中同一个旁白内部的窗口，按实际位置调整 `start` 和 `duration`。成片的混合音轨用于检查整体响度和旁白清晰度。
 - 能试听的人用耳机和手机扬声器各听一次：第一句话是否完整进入，镜头切换时环境声是否突变，关键数字是否被音乐盖住，片尾是否自然结束。Agent 听不到声音时，在交付说明里写明听感未经人耳确认。
