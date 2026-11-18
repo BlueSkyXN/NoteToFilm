@@ -2,6 +2,7 @@
 
 import base64
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -13,7 +14,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "runtime"))
 from notetofilm_local.errors import NTFError
 from notetofilm_local.inspection import scan_media
-from notetofilm_local.media import probe
+from notetofilm_local.media import probe, run_media_command
 
 
 def ffmpeg(*args):
@@ -48,9 +49,20 @@ class ReviewToolTests(unittest.TestCase):
         amplitude = "if(lt(t,0.3),0.3,if(lt(t,1.2),0.0001,if(lt(t,1.6),0.3,if(lt(t,2.5),if(between(t,2,2.1),0,0.001),0.3))))"
         ffmpeg("-f", "lavfi", "-i", "color=gray:s=160x90:r=10:d=3", "-f", "lavfi", "-i",
                f"aevalsrc='0|{amplitude}*cos(2*PI*440*t)':s=48000:d=3", "-c:v", "libx264", "-c:a", "pcm_f32le", clip)
-        first, second = scan_media(clip, probe(clip))["silence"]
+        info = probe(clip)
+        scan = scan_media(clip, info)
+        first, second = scan["silence"]
         self.assertEqual((first["near_silence_seconds"], first["digital_silence_seconds"]), (.9, 0))
         self.assertEqual((second["near_silence_seconds"], second["digital_silence_seconds"]), (0, .1))
+
+        def log_without_filter_instances(*args, **kwargs):
+            result = run_media_command(*args, **kwargs)
+            result.stderr = re.sub(r'\[silencedetect@\w+ @', '[silencedetect @', result.stderr)
+            return result
+
+        # Reproduce the FFmpeg 6 log format on newer builds as well.
+        with patch("notetofilm_local.inspection.run_media_command", side_effect=log_without_filter_instances):
+            self.assertEqual(scan_media(clip, info)["silence"], scan["silence"])
 
     def test_compare_board_grid_overlay_and_crop(self):
         from PIL import Image
