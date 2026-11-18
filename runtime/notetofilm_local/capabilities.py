@@ -23,17 +23,22 @@ def request_mode(route: dict, request: dict) -> str:
 
 
 def request_parameters(request: dict, defaults: dict | None = None) -> dict:
-    params = {}
-    def merge(items, replacing=False):
+    """Merge route defaults with the request; explicit values replace defaults, and two
+    different explicit values for the same parameter (parameters, output, top-level
+    duration_seconds) are a conflict."""
+    params, explicit = {}, set()
+    def merge(items, from_default=False):
         if not isinstance(items, dict):
             raise NTFError("request_invalid", "parameters and output must be objects.")
         for key, value in items.items():
             canonical = ALIASES.get(key, key)
-            if canonical in params and params[canonical] != value and not replacing:
+            if canonical in explicit and params[canonical] != value:
                 raise NTFError("parameter_conflict", "The same generation parameter has conflicting values.", {"parameter": canonical})
             params[canonical] = value
-    merge(defaults or {})
-    merge(request.get("parameters", {}), replacing=True)
+            if not from_default:
+                explicit.add(canonical)
+    merge(defaults or {}, from_default=True)
+    merge(request.get("parameters", {}))
     output = dict(request.get("output", {}))
     if "width" in output or "height" in output:
         if any(type(output.get(k)) is not int or output[k] <= 0 for k in ("width", "height")):

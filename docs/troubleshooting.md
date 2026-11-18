@@ -44,7 +44,7 @@
 | `route_modality`、`unsupported_mode` | 图片请求用了视频路由，或模式不属于该类型 | 图片模式：`text_to_image`、`reference_to_image`；视频模式：`text_to_video`、`image_to_video`、`reference_to_video`、`first_last_to_video` |
 | `mode_inputs` | 参考图、首尾帧与模式不匹配，或 `mask` 用在了 `reference_to_image` 以外 | 图生视频给 `start_frame`，首尾帧给 `start_frame` 与 `end_frame`，参考图模式给 `references` |
 | `unsupported_parameter` | 适配器不能发送这个参数，或一次请求要了多个视频 | 删掉该参数；视频每个动作只出一个结果，多个候选拆成多个动作 |
-| `parameter_missing`、`parameter_combination`、`parameter_conflict` | 缺少必填参数、组合不被支持，或 `parameters` 与 `output` 给了不同的值 | 按路由能力声明调整；同一参数只写一处 |
+| `parameter_missing`、`parameter_combination`、`parameter_conflict` | 缺少必填参数、组合不被支持，或 `parameters`、`output`、顶层 `duration_seconds` 给了不同的值（路由默认值可被覆盖） | 按路由能力声明调整；同一参数只写一处 |
 | `reference_limit`、`reference_order`、`reference_role`、`reference_invalid` | 参考图超过上限、`position` 与数组顺序不一致，或 `role`、`instruction` 不是字符串 | 减少参考图；`position` 从 1 开始，与数组顺序相同；`role`、`instruction` 写成文字 |
 | `mask_invalid` | 蒙版不是 PNG，或与第一张参考图尺寸不同 | 用同尺寸 PNG，透明区域为要修改的部分 |
 | `path_outside_project`、`reference_missing` | 引用了项目外的文件或读不到 | 先 `ntf import` 导入项目，再用返回的素材 ID 或项目内路径 |

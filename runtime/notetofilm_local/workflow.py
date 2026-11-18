@@ -101,7 +101,7 @@ def make_plan(project: Project):
         sid = scene["id"]
         audio_policy = scene.get("audio_policy", "edge_tts")
         compose_scene = {"id": sid, "audio_policy": audio_policy}
-        for key in ("duration_seconds", "native_volume", "narration_volume", "subtitles_offset_seconds", "transition"):
+        for key in ("duration_seconds", "native_volume", "narration_volume", "subtitles_offset_seconds", "transition", "subtitles"):
             if key in scene:
                 compose_scene[key] = field(sid, key)
         if scene.get("audio"):

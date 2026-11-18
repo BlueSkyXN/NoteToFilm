@@ -55,7 +55,7 @@ PROJECT 与文件参数都传具体路径。动作 ID 从计划或 `ready` 结�
 
 `settings`不带修改参数时读取项目默认值。声音可控voice/rate/volume/pitch，画幅可控width/height/fps，文字可控subtitles（sidecar、burn、embed、none）/subtitle-renderer/font-file/font-size，音轨可控audio-tracks（single或dual），路由可控image-route/video-route。修改后重新plan；字体和配字时点仍在合成清单中明确。
 
-`timing --mode estimate`只报告估时，不伪造字幕；`timing --apply`要求已有真实音频，以lead/tail、最小/最大片长和preserve-planned选项计算窗口，并更新未采用现有画面的video_parameters.duration_seconds。超限时拒绝整次写入，返回待拆镜项；之后重新plan。
+`timing --mode estimate`只报告估时，不伪造字幕；默认按约每秒 4.6 个发音单位（中文字、数字各算一个，英文词算两个）并随项目或镜头的 `rate` 换算，`--units-per-second` 可指定固定语速；`timing --apply`要求已有真实音频，以lead/tail、最小/最大片长和preserve-planned选项计算窗口，并更新未采用现有画面的video_parameters.duration_seconds。超限时拒绝整次写入，返回待拆镜项；之后重新plan。
 
 `preview` 只导出审阅页、JPEG 和可播放成片，不复制项目配置或任务快照；默认选择最近成功成片。后处理后用 `--video` 指定最终文件及 `--timeline` 指定相应时间表，或用 `--render` 选择已登记成片。时间表须与最终视频时长和正式分镜 ID 对应，审阅顺序按时间表排列。返回的 `serve_argv` 调用支持 byte range 的 `ntf serve`，只服务独立导出目录。
 
@@ -75,7 +75,7 @@ PROJECT 与文件参数都传具体路径。动作 ID 从计划或 `ready` 结�
 
 `sheet` 把视频按时间抽帧排成 JPEG 网格，每格标注该帧的实际源时间；给出 `--timeline` 时同时标注镜头 ID，`sheet.json` 列出每帧对应的字幕。`--cuts` 只取每个剪点或转场前后 `--cut-padding` 秒，`--start/--end` 复看指定时段；单次最多约 600 帧，超出时降低 `--fps` 或缩小时段。输出目录须为空，以保留之前的查看记录。需要 render 依赖中的 Pillow。
 
-`web-render` 打开项目内提供 `window.render(t)` 的页面，按项目画幅和帧率逐帧截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）；时长默认读页面的 `window.DUR`。`--preview-time` 可重复，只输出静帧，并按另一种渲染顺序比对画面是否只由时间决定；加 `--text-check` 时报告文字出界、重叠和过小并输出标注图。渲染可加 `--dpr`（超采样，1–3）、`--subframes`（子帧运动模糊，1–8，`--shutter` 调快门比例）和 `--grain`（编码时叠加颗粒，0–40）。页面目录内容与参数不变时复用已有素材，`--force` 另生成新版本。需要 Playwright（web 可选依赖）和 Chromium 或本机 Chrome；页面写法在 compose Skill 的代码动画说明。
+`web-render` 打开项目内提供 `window.render(t)` 的页面，按项目画幅和帧率逐帧截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）；时长默认读页面的 `window.DUR`。页面脚本里写了 `READY = …` 时，等到 `window.READY === true` 才开始截图；没有写时，`render` 出现即开始。`--preview-time` 可重复，只输出静帧，并按另一种渲染顺序比对画面是否只由时间决定；加 `--text-check` 时报告文字出界、重叠和过小并输出标注图。渲染可加 `--dpr`（超采样，1–3）、`--subframes`（子帧运动模糊，1–8，`--shutter` 调快门比例）和 `--grain`（编码时叠加颗粒，0–40）。页面目录内容与参数不变时复用已有素材，`--force` 另生成新版本。需要 Playwright（web 可选依赖）和 Chromium 或本机 Chrome；页面写法在 compose Skill 的代码动画说明。
 
 `inspect --scan` 报告冻结（默认持续 1 秒以上，`--freeze-seconds`）、黑场和静音（默认 0.5 秒以上，`--silence-seconds`）区间，带 `--timeline` 时标注所在镜头。结果是查看提示，不影响 verification；静态画面和有意停留同样会出现在冻结中。
 

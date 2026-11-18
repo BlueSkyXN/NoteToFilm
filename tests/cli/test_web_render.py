@@ -16,6 +16,19 @@ STARTER = ROOT / '.agents/skills/notetofilm-compose/assets/code-animation'
 
 
 class WebRenderEntryTests(unittest.TestCase):
+    def test_pages_that_assign_ready_wait_for_ready_true(self):
+        from notetofilm_local import web_render as wr
+        with tempfile.TemporaryDirectory(prefix='ntf-ready-') as tmp:
+            page = Path(tmp) / 'index.html'
+            page.write_text('<script type="module">import { r } from "./scene.js"; window.render = r;</script>')
+            (Path(tmp) / 'scene.js').write_text('export const r = t => {}; // window.READY === true is checked elsewhere\n')
+            self.assertFalse(wr._declares_ready(page))
+            (Path(tmp) / 'scene.js').write_text('export const r = t => {};\nwindow.READY = false;\n')
+            self.assertTrue(wr._declares_ready(page))
+        self.assertTrue(wr._declares_ready(STARTER / 'index.html'))
+        self.assertIn('window.READY === true', wr.READY_STRICT)
+        self.assertNotIn('undefined', wr.READY_STRICT)
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix='ntf-web-')
         self.addCleanup(temp.cleanup)

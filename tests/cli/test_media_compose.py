@@ -96,6 +96,28 @@ class MediaComposeTests(unittest.TestCase):
         self.assertIsNone(result["subtitles_path"])
         self.assertAlmostEqual(result["duration_seconds"], 1.2, places=3)
 
+    def test_scene_can_turn_off_its_subtitles(self):
+        manifest = copy.deepcopy(self.manifest)
+        with_cues = [s for s in manifest["scenes"] if s.get("subtitles_path")]
+        self.assertTrue(with_cues)
+        baseline = compose(self.root, manifest, self.root / "subs-on", render=False)
+        self.assertTrue(baseline["subtitles_path"])
+        for scene in with_cues:
+            scene["subtitles"] = False
+        result = compose(self.root, manifest, self.root / "subs-off", render=False)
+        self.assertIsNone(result["subtitles_path"])
+        with_cues[0]["subtitles"] = "no"
+        with self.assertRaises(NTFError) as failure:
+            compose(self.root, manifest, self.root / "subs-bad", render=False)
+        self.assertEqual(failure.exception.code, "compose_invalid")
+        # Selected narration subtitles are not attached to a scene that turned them off.
+        from notetofilm_local.runner import _prepare_manifest
+        prepared = _prepare_manifest(None, {"scenes": [
+            {"id": "a", "audio": {"subtitles_path": "x.srt"}, "subtitles": False},
+            {"id": "b", "audio": {"subtitles_path": "y.srt"}}]})
+        self.assertNotIn("subtitles_path", prepared["scenes"][0])
+        self.assertEqual(prepared["scenes"][1]["subtitles_path"], "y.srt")
+
     def test_project_escape_and_subtitle_overflow_rejected(self):
         manifest = copy.deepcopy(self.manifest)
         manifest["scenes"][0]["visuals"][0]["path"] = "/etc/passwd"

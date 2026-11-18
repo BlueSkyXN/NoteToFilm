@@ -255,7 +255,9 @@ def _plan_scene(root, raw, settings, start, cache):
     subtitle_path = None
     subtitle_offset = _value(raw.get("subtitles_offset_seconds", audio["start_seconds"] if audio else 0),
                              "subtitles_offset_seconds", minimum=None)
-    if raw.get("subtitles_path"):
+    if "subtitles" in raw and not isinstance(raw["subtitles"], bool):
+        raise NTFError("compose_invalid", f"Scene {scene_id}: subtitles must be true or false.")
+    if raw.get("subtitles_path") and raw.get("subtitles", True):
         subtitle_path = project_path(root, raw["subtitles_path"])
         for cue in read_subtitles(subtitle_path):
             local_start = cue["start_seconds"] + subtitle_offset

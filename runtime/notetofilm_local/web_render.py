@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import subprocess
 import sys
 import threading
@@ -28,6 +29,19 @@ BROWSER_ARGS = ['--force-color-profile=srgb', '--font-render-hinting=none', '--h
                 '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader',
                 '--autoplay-policy=no-user-gesture-required'] + (['--use-angle=metal'] if sys.platform == 'darwin' else [])
 READY = "() => typeof window.render === 'function' && (window.READY === true || window.READY === undefined)"
+# Pages whose scripts assign READY wait for READY === true, so resources prepared after
+# render() is defined are not captured half-loaded.
+READY_STRICT = "() => typeof window.render === 'function' && window.READY === true"
+READY_ASSIGNMENT = re.compile(r"\bREADY\s*=(?!=)")
+
+
+def _declares_ready(page):
+    """True when any script in the page directory assigns READY."""
+    for path in page.parent.rglob('*'):
+        if path.suffix.lower() in ('.html', '.htm', '.js', '.mjs') and path.is_file() and path.stat().st_size < 4_000_000:
+            if READY_ASSIGNMENT.search(path.read_text(encoding='utf-8', errors='ignore')):
+                return True
+    return False
 RENDER = "async t => { await window.render(t); }"
 RENDER_AND_COLLECT = "async t => { window.__ntfText.reset(); await window.render(t); return window.__ntfText.collect(); }"
 TEXT_HOOK = Path(__file__).with_name('data') / 'text_hook.js'
@@ -181,6 +195,7 @@ class _Session:
         self.size = {'width': settings['width'], 'height': settings['height']}
         self.dpr = dpr
         self.init_script = TEXT_HOOK.read_text(encoding='utf-8') if text_check else None
+        self.ready = READY_STRICT if _declares_ready(page) else READY
         relative = page.relative_to(project.root.resolve()).as_posix()
         query = urlencode({'w': settings['width'], 'h': settings['height'], 'fps': settings['fps'],
                            'duration': duration if duration is not None else '', 'render': 1})
@@ -197,7 +212,7 @@ class _Session:
                 and self.errors.append(f'{response.status} {response.url}'[:300]))
         page.goto(self.url)
         try:
-            page.wait_for_function(READY, timeout=120000)
+            page.wait_for_function(self.ready, timeout=120000)
             page.evaluate("() => document.fonts ? document.fonts.ready.then(() => true) : true")
         except Exception as exc:
             raise NTFError('web_page_not_ready', '页面没有提供 window.render(t)，或 window.READY 一直未变为 true。',

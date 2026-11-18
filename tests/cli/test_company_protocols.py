@@ -58,6 +58,17 @@ def route(adapter, modality):
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_explicit_output_replaces_route_default_but_explicit_values_must_agree(self):
+        defaults = {"count": 1, "quality": "medium"}
+        self.assertEqual(request_parameters({"output": {"count": 2}}, defaults)["count"], 2)
+        self.assertEqual(request_parameters({"parameters": {"n": 3}}, defaults)["count"], 3)
+        self.assertEqual(request_parameters({"output": {"count": 2}, "parameters": {"count": 2}}, defaults)["count"], 2)
+        with self.assertRaises(NTFError) as conflict:
+            request_parameters({"output": {"count": 2}, "parameters": {"count": 3}}, defaults)
+        self.assertEqual(conflict.exception.code, "parameter_conflict")
+        with self.assertRaises(NTFError):
+            request_parameters({"parameters": {"duration_seconds": 5}, "duration_seconds": 6}, {})
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

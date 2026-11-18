@@ -128,6 +128,8 @@ def _prepare_manifest(project, manifest):
     manifest = copy.deepcopy(manifest)
     for scene in manifest.get("scenes", []):
         audio = scene.get("audio")
+        if scene.get("subtitles") is False:
+            continue
         if isinstance(audio, dict) and audio.get("subtitles_path") and not scene.get("subtitles_path"):
             scene["subtitles_path"] = audio["subtitles_path"]
     return manifest

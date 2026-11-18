@@ -147,7 +147,7 @@ def parser():
     timing.add_argument("--tail-seconds", type=float, default=.6)
     timing.add_argument("--min-seconds", type=int, default=1)
     timing.add_argument("--max-seconds", type=int)
-    timing.add_argument("--units-per-second", type=float, default=3.5)
+    timing.add_argument("--units-per-second", type=float, help="Override the estimate speed; by default about 4.6 units/s scaled by the narration rate")
     timing.add_argument("--preserve-planned", action="store_true")
     timing.add_argument("--apply", action="store_true", help="Write measured durations and windows to the storyboard; re-plan afterwards")
     inspect = commands.add_parser("inspect", help="Probe actual media, optionally fully decode and export small JPEG frames")

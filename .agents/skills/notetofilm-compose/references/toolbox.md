@@ -37,6 +37,30 @@ ffmpeg -i green.mp4 -i bg.mp4 -filter_complex "[0:v]colorkey=0x00FF00:0.3:0.1[k]
  -map "[v]" -an -c:v libx264 -pix_fmt yuv420p keyed.mp4            # 绿幕抠像后叠到背景上
 ```
 
+### 局部去字
+
+生成视频里的端口编号、条码或伪文字，在固定镜头中可以只模糊那一块。先用 `ntf sheet` 和放大的关键帧确定区域与时段，`crop` 的宽、高、x、y 与 `overlay` 的位置相同，`enable` 限定时段：
+
+```bash
+ffmpeg -i clip.mp4 -filter_complex \
+ "[0:v]split[a][b];[b]crop=360:56:295:568,boxblur=10:2[bl];[a][bl]overlay=295:568:enable='between(t,10.4,15.3)'[v]" \
+ -map "[v]" -map 0:a -c:v libx264 -crf 17 -pix_fmt yuv420p -c:a copy clean.mp4
+```
+
+处理后取同一时刻的帧对比，确认字已看不清、模糊块不显眼。镜头在推拉或横移时文字位置一直变化，固定区域遮不住，改为重新生成或换镜头。
+
+### 房间底噪与停顿电平
+
+生成视频的原生声音常常大段静音；图解页本身没有声音。句间停顿掉到 -90 dB 时听起来像断线，可以铺一层很轻的房间底噪作为 `background_audio`：
+
+```bash
+ffmpeg -f lavfi -i "anoisesrc=color=brown:amplitude=0.5:seed=7:sample_rate=48000:duration=30" \
+ -af "highpass=f=50,lowpass=f=900,volume=-21dB,aformat=channel_layouts=stereo,afade=t=in:d=0.05,afade=t=out:st=29.95:d=0.05" roomtone.wav
+ffmpeg -i roomtone.wav -af astats=metadata=0 -f null - 2>&1 | grep 'RMS level'   # 目标约 -46 dB
+```
+
+导入后 `--select film.background`，清单里 `"background_audio": {"selection": "film.background", "volume": 1.0, "loop": true}`。抽测某一时刻的电平用采样精确的截取：`ffmpeg -i film.mp4 -map 0:a -af "atrim=start=20.7:duration=0.6,volumedetect" -f null -`；把 `-ss`、`-t` 放在 `-i` 前截取不到一秒的片段时，读数可能不准。
+
 本机 FFmpeg 若没有 `drawtext` 和 `subtitles` 滤镜，文字用合成清单的 `text_overlays`、`ntf motion` 或 ImageMagick 生成。
 
 ## 图片排版（ImageMagick 7）

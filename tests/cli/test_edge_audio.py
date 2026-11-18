@@ -43,6 +43,21 @@ class EdgeAudioTests(unittest.TestCase):
             self.assertEqual(boundaries[0]["offset"], 1000000)
             self.assertEqual(Path(result["audio_path"]).read_bytes(), audio)
 
+    def test_word_boundaries_become_short_punctuated_cues(self):
+        from notetofilm_local.adapters.edge_tts import _boundary_cues
+        spoken = "清晨，纸船缓缓漂过木桥：让 Pip 在岸边画一颗星。"
+        tokens = ["清晨", "纸船", "缓缓", "漂过", "木桥", "让", "Pip", "在", "岸边", "画", "一颗", "星"]
+        events = [{"type": "WordBoundary", "offset": i * 5_000_000, "duration": 3_000_000, "text": token}
+                  for i, token in enumerate(tokens)]
+        cues = _boundary_cues(events, spoken)
+        self.assertEqual([c["text"] for c in cues], ["清晨，纸船缓缓漂过木桥：", "让 Pip 在岸边画一颗星。"])
+        self.assertEqual(cues[0]["start_seconds"], 0)
+        self.assertEqual(cues[0]["end_seconds"], 2.5)
+        self.assertAlmostEqual(cues[1]["end_seconds"], 5.8)
+        # Words that cannot be matched in order fall back to service text without punctuation recovery.
+        fallback = _boundary_cues(events, "完全不同的文本")
+        self.assertTrue(fallback and "，" not in fallback[0]["text"])
+
     def test_provider_error_does_not_expose_query_token(self):
         class Communicate:
             def __init__(self, *args, **kwargs):

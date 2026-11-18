@@ -22,7 +22,7 @@
 
 素材 ID 与镜头 ID 不相互代替。一份素材可以被多镜复用，新候选不覆盖旧文件，采用关系通过 `ntf select` 更新。导入文件与原材料复制应留在项目目录内。
 
-阅读版镜头展示01、02等连续顺序，正式id仍用于动作和素材引用。章节与方向说明可保留在分镜的扩展字段。需要运行代码实际加入定时文字时使用text_overlays：text、start_seconds、end_seconds、position；screen_text本身是导演要求，不自动推断文字出现时点。
+阅读版镜头展示01、02等连续顺序，正式id仍用于动作和素材引用。章节与方向说明可保留在分镜的扩展字段。需要运行代码实际加入定时文字时使用text_overlays：text、start_seconds、end_seconds、position；screen_text本身是导演要求，不自动推断文字出现时点。采用的配音自带逐句字幕；画面上已经写着同一句话的镜头可设 `subtitles: false` 不显示字幕。
 
 素材引用中的media_duration_seconds是实测来源长度；visuals[].duration_seconds是明确要求使用的剪辑长度。二者独立，模型多返回一帧不应自动扩大镜头窗口。独立旁白的narration_start_seconds控制镜内开始时间；使用现成audio对象时在audio.start_seconds设置。
 

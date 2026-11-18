@@ -13,6 +13,8 @@
 <body>
 <canvas id="c"></canvas>
 <script type="module">
+// 先声明未就绪：web-render 看到页面写了 READY 赋值，会等到 READY === true 才截图。
+window.READY = false;
 // 示例：同位对照——固定基准与尺度，让差异成为唯一变化。替换内容、数值和样式，保留 render(t) 的写法。
 import { DUR, BEATS } from './timing.js';
 import { seg, ease, glide, lerp, renderInfo, setupCanvas, drawPath, reveal, wrapText, drawLines, countUp, loadFonts } from './motion.js';

@@ -7,7 +7,7 @@ description: "为本地视频整理原材料、已有图片和制作说明。用
 
 1. 读 [本机入口](references/runtime.md)、[项目格式](references/project-format.md)。没有项目时用 [命令](references/commands.md) 中的 `ntf init` 建立最小项目。
 2. 使用当前客户端已有文件、文档与链接读取能力，阅读用户实际提供的内容。按 [材料方法](references/materials.md) 组织材料；没有原文的事实不要自行补成结论。
-3. 由当前 Agent 更新 `project.json` 的 `brief`，保留项目 ID、输出与已有设置。只整理资料时可以暂缺时长和声音，记录尚未决定的部分。
+3. 由当前 Agent 更新 `project.json` 的 `brief`，保留项目 ID、输出与已有设置。只整理资料时可以暂缺时长和声音，记录尚未决定的部分。要求完整制作而材料没写受众、用途或时长时，在 `brief` 写出本轮假设并标明是假设，交付时请用户确认。
 4. 将需留存的原文件复制到 `sources/originals/`。写 `sources/index.json`：固定来源 ID、项目内相对路径或真实链接、必要原文位置。保留能直接使用的图表与截图。
 5. 写 `materials.md`：可讲事实、重点、例子、原图和缺项，每项对应来源。区分事实证据、外观参考、风格参考与现成媒体；用户提供图片不自动决定视频生成模式。追加材料时保留既有来源 ID。
 6. 原图需要进入媒体制作时用 `ntf import` 登记为素材，记录返回的 `asset_id`；来源 ID 与素材 ID 分开。
