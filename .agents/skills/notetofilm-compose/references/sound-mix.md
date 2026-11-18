@@ -41,7 +41,12 @@ ffmpeg -f lavfi -i "anoisesrc=color=pink:duration=0.6:seed=9:sample_rate=48000" 
 
 ```python
 """按合成时间表预混一条底声：房间底噪、定时音效，以及在旁白处让位的音乐。"""
-import argparse, json, subprocess
+import argparse
+import json
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
 p = argparse.ArgumentParser()
 p.add_argument('--timeline', required=True)                 # compose --plan-only 的输出或 timeline.json
@@ -54,6 +59,10 @@ p.add_argument('--ramp', type=float, default=0.6)           # 降低与恢复的
 p.add_argument('--merge-gap', type=float, default=1.5)      # 两段旁白间隔短于此值时音乐不回升
 p.add_argument('--sfx', action='append', default=[])        # 秒数:文件:增益dB，可重复
 a = p.parse_args()
+output = Path(a.output)
+output_exists = f'输出文件 {output} 已存在，请为 --output 指定新文件名。'
+if output.exists() or output.is_symlink():
+    p.error(output_exists)
 
 timeline = json.load(open(a.timeline, encoding='utf-8'))
 total = float(timeline['duration_seconds'])
@@ -67,7 +76,7 @@ for start, end in windows:
     else:
         merged.append([start, end])
 
-cmd, filters, labels = ['ffmpeg', '-v', 'error', '-y'], [], []
+cmd, filters, labels = ['ffmpeg', '-v', 'error', '-nostdin', '-n'], [], []
 fmt = 'aformat=sample_rates=48000:channel_layouts=stereo'
 def add(path, loop=False):
     cmd.extend((['-stream_loop', '-1'] if loop else []) + ['-i', path])
@@ -85,7 +94,21 @@ for k, item in enumerate(a.sfx):
     at, rest = item.split(':', 1); path, db = rest.rsplit(':', 1)
     filters.append(f'[{add(path)}:a]{fmt},volume={db}dB,adelay={round(float(at) * 1000)}:all=1[s{k}]'); labels.append(f'[s{k}]')
 filters.append(f"{''.join(labels)}amix=inputs={len(labels)}:duration=longest:normalize=0,apad,atrim=end={total}[bed]")
-subprocess.run(cmd + ['-filter_complex', ';'.join(filters), '-map', '[bed]', '-c:a', 'pcm_s16le', a.output], check=True)
+
+with tempfile.TemporaryDirectory(prefix='.premix-', dir=output.parent) as staging:
+    rendered = Path(staging) / output.name
+    subprocess.run(cmd + ['-filter_complex', ';'.join(filters), '-map', '[bed]', '-c:a', 'pcm_s16le', str(rendered)], check=True)
+    try:
+        destination = output.open('xb')
+    except FileExistsError:
+        p.error(output_exists)
+    try:
+        with destination, rendered.open('rb') as source:
+            shutil.copyfileobj(source, destination)
+    except BaseException:
+        output.unlink(missing_ok=True)
+        raise
+
 print(json.dumps({'output': a.output, 'duration_seconds': total, 'narration_windows': merged}, ensure_ascii=False))
 ```
 
@@ -97,7 +120,7 @@ python3 work/premix_bed.py --timeline work/plan.json --output work/bed-v1.wav \
 ntf import PROJECT work/bed-v1.wav --select film.background
 ```
 
-清单里写 `"background_audio": {"selection": "film.background", "volume": 1.0}`，再正式合成。片子的剪辑、旁白或转场改了，镜头时间会变，先重跑 `--plan-only` 再预混一个新版本，旧文件保留。
+预混输出已存在时，换用一个新文件名。清单里写 `"background_audio": {"selection": "film.background", "volume": 1.0}`，再正式合成。片子的剪辑、旁白或转场改了，先重跑 `--plan-only` 取得新的镜头时间，再预混一个新版本。
 
 起点参数：音乐在无旁白处约 −18 dB，旁白期间再降 6–12 dB，过渡 0.3–1 秒；这些是第一次试混的起点，按曲子的鼓点、旋律和低频调整，突出的鼓点和旋律即使平均电平低也会干扰人声。只有室内底噪时不必设让位。
 
