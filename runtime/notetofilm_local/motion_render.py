@@ -32,7 +32,7 @@ def partial_path(points, fraction):
             break
     return result
 
-def draw_layer(layer, size, font_file, t=None, fonts=None):
+def draw_layer(layer, size, font_file, t=None, fonts=None, font_index=0):
     canvas = Image.new('RGBA', size)
     d = ImageDraw.Draw(canvas)
     for obj in layer.get('objects', []):
@@ -66,7 +66,7 @@ def draw_layer(layer, size, font_file, t=None, fonts=None):
             fonts = fonts if fonts is not None else {}
             font_size = obj.get('size', 32)
             if font_size not in fonts:
-                fonts[font_size] = ImageFont.truetype(font_file, font_size)
+                fonts[font_size] = ImageFont.truetype(font_file, font_size, index=font_index)
             font = fonts[font_size]
             x, y = obj['xy']
             width = obj.get('max_width', size[0]-x)
@@ -179,7 +179,8 @@ class MotionFrames:
                 with Image.open(layer['path']) as source:
                     self.images[index] = source.convert('RGBA')
             elif layer['type'] == 'draw' and not any('reveal_start' in obj for obj in layer['objects']):
-                self.images[index] = draw_layer(layer, self.size, settings.get('font_file'), fonts=self.fonts)
+                self.images[index] = draw_layer(layer, self.size, settings.get('font_file'), fonts=self.fonts,
+                                                font_index=settings.get('font_index', 0))
 
     def close(self):
         for video in self.videos.values():
@@ -204,7 +205,8 @@ class MotionFrames:
                 frame_index = max(0, math.floor((t - layer['start']) * self.settings['fps'] + 1e-6))
                 source = self.videos[index].frame(frame_index)
             elif dynamic:
-                source = draw_layer(layer, self.size, self.settings.get('font_file'), t=t, fonts=self.fonts)
+                source = draw_layer(layer, self.size, self.settings.get('font_file'), t=t, fonts=self.fonts,
+                                    font_index=self.settings.get('font_index', 0))
             else:
                 source = self.images[index]
             sw, sh = source.size

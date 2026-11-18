@@ -86,6 +86,9 @@ def _settings(manifest):
     font_file = raw.get("subtitle_font_file")
     if font_file is not None and (not isinstance(font_file, str) or not font_file.strip()):
         raise NTFError("compose_invalid", "subtitle_font_file must be a local font file path.")
+    font_index = raw.get("subtitle_font_index", 0)
+    if isinstance(font_index, bool) or not isinstance(font_index, int) or font_index < 0:
+        raise NTFError("compose_invalid", "subtitle_font_index must be a nonnegative integer face index within the font collection.")
     loudness = raw.get('audio_loudness_lufs')
     peak = _value(raw.get('audio_true_peak_db', -2), 'audio_true_peak_db', minimum=None)
     if not -9 <= peak <= 0:
@@ -96,7 +99,7 @@ def _settings(manifest):
             raise NTFError('compose_invalid', 'audio_loudness_lufs must be between -70 and -5.')
     return {"width": width, "height": height, "fps": fps, "fps_expression": str(fps_fraction),
             "subtitles_mode": mode, "audio_tracks": audio_tracks, "subtitle_font": font, "subtitle_font_size": font_size,
-            "subtitle_renderer": renderer, "subtitle_font_file": font_file,
+            "subtitle_renderer": renderer, "subtitle_font_file": font_file, "subtitle_font_index": font_index,
             "audio_loudness_lufs": loudness, "audio_true_peak_db": peak}
 
 
@@ -255,7 +258,9 @@ def _plan_scene(root, raw, settings, start, cache):
     subtitle_path = None
     subtitle_offset = _value(raw.get("subtitles_offset_seconds", audio["start_seconds"] if audio else 0),
                              "subtitles_offset_seconds", minimum=None)
-    if raw.get("subtitles_path"):
+    if "subtitles" in raw and not isinstance(raw["subtitles"], bool):
+        raise NTFError("compose_invalid", f"Scene {scene_id}: subtitles must be true or false.")
+    if raw.get("subtitles_path") and raw.get("subtitles", True):
         subtitle_path = project_path(root, raw["subtitles_path"])
         for cue in read_subtitles(subtitle_path):
             local_start = cue["start_seconds"] + subtitle_offset

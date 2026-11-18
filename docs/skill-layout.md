@@ -68,6 +68,7 @@ NoteToFilm/
     ├── compose.py / timing.py    # 变速、转场与音画窗口
     ├── loudness.py               # normalize 双遍响度
     ├── sheet.py                  # sheet 按时间抽帧的联系表
+    ├── compare.py                # compare 多画面并排、叠合与局部放大
     ├── web_render.py             # web-render 网页动画逐帧渲染（data/text_hook.js 供文字检查）
     └── review_server.py          # serve 可拖动审阅服务
 ```

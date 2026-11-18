@@ -1,0 +1,258 @@
+"""Side-by-side boards for comparing candidates, directions, cut alignment and small details."""
+from __future__ import annotations
+
+from bisect import bisect_right
+from fractions import Fraction
+import json
+import math
+import shutil
+import tempfile
+from pathlib import Path
+
+from .errors import NTFError
+from .io import atomic_json
+from .media import probe, run_media_command
+
+MAX_INPUTS = 12
+MAX_TIMES = 10
+
+
+def _parse_input(raw):
+    """`file` or `file@seconds`; the suffix picks one frame of a video."""
+    text = str(raw)
+    path, at = text, None
+    if '@' in text:
+        head, tail = text.rsplit('@', 1)
+        try:
+            at = float(tail)
+        except ValueError:
+            head, at = text, None
+        else:
+            path = head
+    if at is not None and (not math.isfinite(at) or at < 0):
+        raise NTFError('compare_parameters', '输入后缀 @秒数 须为非负数。', {'input': text})
+    return Path(path).expanduser().resolve(), at
+
+
+def _crop(value):
+    if value is None:
+        return None
+    try:
+        parts = [float(v) for v in str(value).split(',')]
+    except ValueError:
+        parts = []
+    if len(parts) != 4 or not all(math.isfinite(v) for v in parts):
+        raise NTFError('compare_parameters', '--crop 写成 x,y,宽,高，取 0–1 的画面比例，例如 0.2,0.6,0.3,0.2。')
+    x, y, w, h = parts
+    if not (0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 - x + 1e-9 and 0 < h <= 1 - y + 1e-9):
+        raise NTFError('compare_parameters', '--crop 区域须落在画面之内。')
+    return x, y, w, h
+
+
+def _video_stills(source, info, moments, work, row):
+    """Match presentation intervals, including variable-rate video and nonzero starting PTS."""
+    stream = str(info['video_stream_index'])
+    probe_result = run_media_command(
+        ['ffprobe', '-v', 'error', '-select_streams', stream, '-show_entries',
+         'stream=time_base,start_pts,duration_ts:frame=best_effort_timestamp,duration,pkt_duration',
+         '-of', 'json', str(source)], timeout=300)
+    data = json.loads(probe_result.stdout)
+    frames = data.get('frames', [])
+    try:
+        ticks = [int(frame['best_effort_timestamp']) for frame in frames]
+        stream_info = data['streams'][0]
+        unit = Fraction(stream_info['time_base'])
+        first, last = ticks[0], ticks[-1]
+    except (KeyError, IndexError, ValueError, TypeError, ZeroDivisionError):
+        raise NTFError('compare_no_frame', '视频缺少可定位画面的时间戳。', {'input': str(source)}) from None
+    if unit <= 0 or any(b < a for a, b in zip(ticks, ticks[1:])):
+        raise NTFError('compare_no_frame', '视频帧的显示时间顺序无效。', {'input': str(source)})
+
+    duration = Fraction(str(info['duration_seconds']))
+    if stream_info.get('duration_ts') is not None:
+        duration = (int(stream_info.get('start_pts', first)) + int(stream_info['duration_ts']) - first) * unit
+    else:
+        last_duration = frames[-1].get('duration') or frames[-1].get('pkt_duration')
+        if last_duration and int(last_duration) > 0:
+            duration = (last - first + int(last_duration)) * unit
+    indices = []
+    for moment in moments:
+        at = Fraction(str(moment))
+        if not 0 <= at < duration:
+            raise NTFError('compare_parameters', '取帧时刻须在视频时长内。', {
+                'input': str(source), 'requested_seconds': moment, 'duration_seconds': float(duration)})
+        indices.append(bisect_right(ticks, first + at / unit) - 1)
+    unique = sorted(set(indices))
+    select = '+'.join(f'eq(n\\,{i})' for i in unique)
+    pattern = work / f'{row}-%03d.png'
+    run_media_command(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', str(source),
+                       '-map', '0:' + stream, '-vf', 'select=' + select, '-fps_mode', 'passthrough',
+                       '-frames:v', str(len(unique)), '-start_number', '0', str(pattern)], timeout=300)
+    files = {index: work / f'{row}-{n:03d}.png' for n, index in enumerate(unique)}
+    if any(not path.is_file() for path in files.values()):
+        raise NTFError('compare_no_frame', '未能解码指定视频帧。', {'input': str(source)})
+    return [(files[i], float((ticks[i] - first) * unit)) for i in indices]
+
+
+def _crop_frame(frame, region):
+    if region is None:
+        return frame
+    x, y, w, h = region
+    left, top = round(x * frame.width), round(y * frame.height)
+    right, bottom = round((x + w) * frame.width), round((y + h) * frame.height)
+    if right <= left or bottom <= top:
+        raise NTFError('compare_parameters', '裁区取整后不足一个像素，请增大宽或高。',
+                       {'input_size': list(frame.size), 'crop': region})
+    return frame.crop((left, top, right, bottom))
+
+
+def _fit(frame, size):
+    """Center this frame in the common canvas, preserving its aspect ratio."""
+    from PIL import Image
+    width, height = size
+    scale = min(width / frame.width, height / frame.height)
+    w, h = max(1, round(frame.width * scale)), max(1, round(frame.height * scale))
+    fitted = frame.resize((w, h), Image.Resampling.LANCZOS)
+    if fitted.size == size:
+        return fitted
+    canvas = Image.new('RGB', size, (24, 24, 24))
+    canvas.paste(fitted, ((width - w) // 2, (height - h) // 2))
+    return canvas
+
+
+def _font(font_file, size):
+    from PIL import ImageFont
+    if font_file:
+        try:
+            return ImageFont.truetype(str(Path(font_file).expanduser()), size)
+        except (OSError, ValueError):
+            raise NTFError('compare_parameters', '无法读取 --font-file 字体。') from None
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
+
+
+def compare_board(inputs, *, output, at=None, overlay=False, crop=None, labels=None, cell_width=320,
+                  columns=4, font_file=None, jpeg_quality=85):
+    """Write compare.jpg and compare.json.
+
+    Board: one row per video input with a cell per --at time; image inputs (or videos with @t) take one cell.
+    When every input is a single frame, cells wrap into a grid of `columns`. Overlay: blend all single frames
+    at equal weight to check whether objects line up across a cut. Crop: the same 0–1 region from every frame,
+    enlarged, for checking small text and details.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageOps
+    except ImportError as exc:
+        raise NTFError('render_dependency_missing', '对比表需要 render 依赖中的 Pillow。') from exc
+    if not inputs or len(inputs) > MAX_INPUTS:
+        raise NTFError('compare_parameters', f'提供 1–{MAX_INPUTS} 个图片或视频。')
+    times = list(at or [])
+    if len(times) > MAX_TIMES or any(isinstance(t, bool) or not math.isfinite(t) or t < 0 for t in times):
+        raise NTFError('compare_parameters', f'--at 最多 {MAX_TIMES} 个非负秒数。')
+    if not 120 <= cell_width <= 960 or not 1 <= columns <= 8:
+        raise NTFError('compare_parameters', '使用 120–960 的格宽和 1–8 列。')
+    region = _crop(crop)
+    if labels is not None and len(labels) != len(inputs):
+        raise NTFError('compare_parameters', '--label 的个数须与输入个数相同。')
+    parsed = [_parse_input(raw) for raw in inputs]
+    infos = []
+    for path, _ in parsed:
+        if not path.is_file():
+            raise NTFError('compare_parameters', '找不到输入文件。', {'input': str(path)})
+        info = probe(path)
+        if info['kind'] not in ('image', 'video'):
+            raise NTFError('compare_parameters', '只比较图片和视频。', {'input': str(path), 'kind': info['kind']})
+        infos.append(info)
+    output = Path(output).expanduser().resolve()
+    if output.exists() and (not output.is_dir() or any(output.iterdir())):
+        raise NTFError('output_exists', '选择一个空目录保存对比结果，保留之前的查看记录。')
+    if any(path.is_relative_to(output) for path, _ in parsed):
+        raise NTFError('output_input_collision', '对比目录不能包含输入文件。')
+    names = labels or [f'{i + 1} {path.stem}' for i, (path, _) in enumerate(parsed)]
+    if not font_file:
+        names = [n if n.isascii() else f'{i + 1}' for i, n in enumerate(names)]
+    output.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix='frames-', dir=output))
+    rows = []
+    cell_size = None
+    try:
+        for i, ((path, suffix_at), info) in enumerate(zip(parsed, infos)):
+            if info['kind'] == 'image' or suffix_at is not None or overlay:
+                moments = [None if info['kind'] == 'image' else (suffix_at if suffix_at is not None else (times[0] if times else 0.0))]
+            else:
+                if not times:
+                    raise NTFError('compare_parameters', '视频输入需要 --at 时刻，或在文件名后写 @秒数。', {'input': str(path)})
+                moments = times
+            cells = []
+            stills = [(path, None)] if info['kind'] == 'image' else _video_stills(path, info, moments, work, i)
+            for requested, (still, actual) in zip(moments, stills):
+                with Image.open(still) as image:
+                    frame = _crop_frame(ImageOps.exif_transpose(image).convert('RGB'), region)
+                if cell_size is None:
+                    width = cell_width * 2 if overlay else cell_width
+                    height = max(40, min(width * 2, round(width * frame.height / frame.width)))
+                    cell_size = (width, height)
+                cells.append({'requested': requested, 'time_seconds': actual, 'image': _fit(frame, cell_size)})
+            rows.append({'label': names[i], 'input': str(path), 'kind': info['kind'], 'cells': cells})
+        font, small = _font(font_file, 16), _font(font_file, 13)
+        record = {'inputs': [{'label': r['label'], 'input': r['input'], 'kind': r['kind'],
+                              'times': [c['requested'] for c in r['cells']],
+                              'frame_times': [c['time_seconds'] for c in r['cells']]} for r in rows],
+                  'crop': region, 'overlay': overlay}
+        if overlay:
+            frames = [r['cells'][0]['image'] for r in rows]
+            if len(frames) < 2:
+                raise NTFError('compare_parameters', '--overlay 至少需要两个画面。')
+            base = frames[0]
+            blended = base.copy()
+            for k, frame in enumerate(frames[1:], 2):
+                blended = Image.blend(blended, frame, 1 / k)
+            strip_h = max(1, round(blended.height / len(frames)))
+            strip_w = max(1, round(base.width * strip_h / base.height))
+            board = Image.new('RGB', (blended.width + strip_w + 12, max(blended.height, strip_h * len(frames)) + 30), (24, 24, 24))
+            draw = ImageDraw.Draw(board)
+            draw.text((6, 6), 'overlay (equal weights)  ' + ' + '.join(r['label'] for r in rows), fill=(235, 235, 235), font=font)
+            board.paste(blended, (0, 30))
+            for k, (frame, row) in enumerate(zip(frames, rows)):
+                thumb = frame.resize((strip_w, strip_h))
+                board.paste(thumb, (blended.width + 12, 30 + k * strip_h))
+                actual = row['cells'][0]['time_seconds']
+                stamp = '' if actual is None else f'  {actual:.3f}s'
+                draw.text((blended.width + 16, 32 + k * strip_h), row['label'] + stamp, fill=(255, 214, 102), font=small)
+        else:
+            single = all(len(r['cells']) == 1 for r in rows)
+            cell_h = cell_size[1]
+            label_h, gap, side = 20, 6, 0 if single else 150
+            if single:
+                ncol = min(columns, len(rows))
+                nrow = math.ceil(len(rows) / ncol)
+                board = Image.new('RGB', (gap + ncol * (cell_width + gap), gap + nrow * (cell_h + label_h + gap)), (24, 24, 24))
+                draw = ImageDraw.Draw(board)
+                for k, row in enumerate(rows):
+                    x, y = gap + (k % ncol) * (cell_width + gap), gap + (k // ncol) * (cell_h + label_h + gap)
+                    cell = row['cells'][0]
+                    board.paste(cell['image'], (x, y))
+                    stamp = '' if cell['time_seconds'] is None else f"  {cell['time_seconds']:.3f}s"
+                    draw.text((x + 3, y + cell_h + 3), row['label'] + stamp, fill=(255, 214, 102), font=small)
+            else:
+                ncol = max(len(r['cells']) for r in rows)
+                board = Image.new('RGB', (side + gap + ncol * (cell_width + gap), gap + len(rows) * (cell_h + label_h + gap)), (24, 24, 24))
+                draw = ImageDraw.Draw(board)
+                for k, row in enumerate(rows):
+                    y = gap + k * (cell_h + label_h + gap)
+                    draw.text((8, y + cell_h // 2 - 8), row['label'], fill=(235, 235, 235), font=font)
+                    for n, cell in enumerate(row['cells']):
+                        x = side + gap + n * (cell_width + gap)
+                        board.paste(cell['image'], (x, y))
+                        stamp = 'image' if cell['time_seconds'] is None else f"{cell['time_seconds']:.3f}s"
+                        draw.text((x + 3, y + cell_h + 3), stamp, fill=(255, 214, 102), font=small)
+        target = output / 'compare.jpg'
+        board.save(target, quality=jpeg_quality)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    record['board'] = str(target)
+    atomic_json(output / 'compare.json', record)
+    record['compare_json'] = str(output / 'compare.json')
+    return record

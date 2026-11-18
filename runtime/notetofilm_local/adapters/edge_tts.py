@@ -38,8 +38,75 @@ def _load_edge_tts():
     return package
 
 
-def _boundary_cues(boundaries):
+SENTENCE_END = set("。！？.!?；;")
+SOFT_BREAK = set("，,：:")
+CUE_MIN_CHARS = 8
+CUE_MAX_CHARS = 22
+
+
+def _visible(text):
+    return len(re.sub(r"\s", "", text))
+
+
+def _word_cues(spoken, words):
+    """Align service word boundaries to the spoken text and group them into short cues.
+
+    Times come only from the returned word offsets. Punctuation is recovered from the
+    spoken text so cues can break at sentence ends and clause commas. Returns None when
+    the words cannot be matched in order, so the caller falls back to plain grouping.
+    """
+    spans, cursor = [], 0
+    for word in words:
+        token = word["text"].strip()
+        if not token:
+            continue
+        found = spoken.find(token, cursor)
+        if found < 0 or re.search(r"\w", spoken[cursor:found]):
+            return None
+        spans.append((found, found + len(token), word))
+        cursor = found + len(token)
+    if not spans or re.search(r"\w", spoken[cursor:]):
+        return None
+    cues, current = [], None
+    for index, (begin, end, word) in enumerate(spans):
+        tail_end = spans[index + 1][0] if index + 1 < len(spans) else len(spoken)
+        piece = spoken[begin if index else 0:tail_end]
+        start = word["offset"] / 10_000_000
+        stop = (word["offset"] + word["duration"]) / 10_000_000
+        if current and _visible(current["text"] + spoken[begin:end]) > CUE_MAX_CHARS:
+            cues.append(current)
+            current = None
+        if current is None:
+            current = {"start_seconds": start, "end_seconds": stop, "text": piece.lstrip()}
+        else:
+            current["text"] += piece
+            current["end_seconds"] = stop
+        trailing = spoken[end:tail_end]
+        if any(ch in SENTENCE_END for ch in trailing) or (
+                any(ch in SOFT_BREAK for ch in trailing) and _visible(current["text"]) >= CUE_MIN_CHARS):
+            cues.append(current)
+            current = None
+    if current:
+        cues.append(current)
+    for cue, following in zip(cues, cues[1:]):
+        # Keep the line on screen through a short pause instead of flashing off between clauses.
+        if 0 < following["start_seconds"] - cue["end_seconds"] <= 0.8:
+            cue["end_seconds"] = following["start_seconds"]
+    return [{"start_seconds": c["start_seconds"], "end_seconds": c["end_seconds"], "text": c["text"].strip()}
+            for c in cues if c["text"].strip() and c["end_seconds"] > c["start_seconds"]]
+
+
+def _boundary_cues(boundaries, spoken=None):
+    return _subtitles_with_source(boundaries, spoken)[0]
+
+
+def _subtitles_with_source(boundaries, spoken):
     """Use actual service offsets; group word events without invented timings."""
+    words = [b for b in boundaries if b["type"] == "WordBoundary"]
+    if spoken and words and len(words) == len(boundaries):
+        aligned = _word_cues(spoken, words)
+        if aligned:
+            return aligned, "spoken text aligned to service word boundaries"
     cues = []
     current = None
     for boundary in boundaries:
@@ -68,7 +135,7 @@ def _boundary_cues(boundaries):
             current = None
     if current:
         cues.append(current)
-    return cues
+    return cues, "service boundary text" if cues else None
 
 
 async def synthesize_async(text, output_dir, voice="zh-CN-XiaoxiaoNeural", rate="+0%", volume="+0%",
@@ -93,11 +160,11 @@ async def synthesize_async(text, output_dir, voice="zh-CN-XiaoxiaoNeural", rate=
     kwargs = {"voice": voice, "rate": rate, "volume": volume, "pitch": pitch}
     if os.environ.get("NTF_EDGE_PROXY"):
         kwargs["proxy"] = os.environ["NTF_EDGE_PROXY"]
-    # Sentence-boundary support differs across package versions. Avoid passing
-    # an unsupported keyword to older versions used by an existing client.
+    # Word boundaries give short, punctuation-aligned subtitle cues; boundary support
+    # differs across package versions, so avoid passing an unsupported keyword.
     try:
         if "boundary" in inspect.signature(package.Communicate).parameters:
-            kwargs["boundary"] = "SentenceBoundary"
+            kwargs["boundary"] = "WordBoundary"
     except (TypeError, ValueError):
         pass
     boundaries = []
@@ -127,7 +194,7 @@ async def synthesize_async(text, output_dir, voice="zh-CN-XiaoxiaoNeural", rate=
         information = probe(partial)
         if information["kind"] != "audio":
             raise NTFError("audio_response_invalid", "EdgeTTS response is not an audio file.")
-        cues = _boundary_cues(boundaries)
+        cues, subtitle_source = _subtitles_with_source(boundaries, spoken)
         duration_seconds = information["duration_seconds"]
         warnings = []
         if not cues:
@@ -138,7 +205,8 @@ async def synthesize_async(text, output_dir, voice="zh-CN-XiaoxiaoNeural", rate=
             "engine": "edge-tts", "engine_version": getattr(package, "__version__", "unknown"),
             "text": text, "speech_text": spoken, "voice": voice, "rate": rate, "volume": volume, "pitch": pitch,
             "duration_seconds": duration_seconds, "audio_bytes": audio_bytes,
-            "boundary_time_unit": "100 nanoseconds", "subtitle_text_source": "service boundary text",
+            "boundary_time_unit": "100 nanoseconds",
+            "subtitle_text_source": subtitle_source,
             "warnings": warnings,
         }
         boundaries_path.write_text(json.dumps(boundaries, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

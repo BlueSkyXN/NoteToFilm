@@ -123,6 +123,7 @@ class BaseAdapter:
         if self.timeout <= 0 or self.max_json_bytes <= 0 or self.max_download_bytes <= 0:
             raise NTFError("connection_invalid", "Timeout and response size limits must be positive.")
         self.opener = build_opener(NoRedirect())
+        self.before_submit = None
         self._response_headers = {}
         self._response_status = 200
 
@@ -203,6 +204,8 @@ class BaseAdapter:
             if content_type:
                 headers["Content-Type"] = content_type
             req = Request(current, data=body, headers=headers, method=method)
+            if method == "POST" and self.before_submit is not None:
+                self.before_submit()
             try:
                 with self.opener.open(req, timeout=self.timeout) as response:
                     self._response_headers = dict(getattr(response, "headers", {}))

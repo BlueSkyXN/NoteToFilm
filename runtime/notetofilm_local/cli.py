@@ -34,6 +34,7 @@ def parser():
     info.add_argument('--require-audio', action='store_true')
     info.add_argument('--require-render', action='store_true')
     info.add_argument('--font-file')
+    info.add_argument('--font-index', type=int, default=0, help='Face index inside a TTC/OTC font collection')
     imp = commands.add_parser("import", help="Copy actual media into the project and register it")
     imp.add_argument("project")
     imp.add_argument("file")
@@ -53,6 +54,7 @@ def parser():
     settings.add_argument("--audio-tracks", choices=["single", "dual"])
     settings.add_argument("--subtitle-renderer", choices=["auto", "libass", "pillow"])
     settings.add_argument("--font-file")
+    settings.add_argument("--font-index", type=int, help="Face index inside a TTC/OTC font collection (default 0)")
     settings.add_argument("--font-size", type=float)
     settings.add_argument('--loudness-lufs', type=float)
     settings.add_argument('--true-peak-db', type=float)
@@ -72,6 +74,8 @@ def parser():
     for name in ("ready", "status"):
         command = commands.add_parser(name, help="Inspect project state and current input dependencies")
         command.add_argument("project")
+        if name == "status":
+            command.add_argument("--usage", action="store_true", help="按路由、模型和媒体类型查看提交状态、登记素材和成片直接引用量")
     run = commands.add_parser("run", help="Execute ready work or resume recorded tasks")
     run.add_argument("project")
     run.add_argument("--action")
@@ -147,7 +151,7 @@ def parser():
     timing.add_argument("--tail-seconds", type=float, default=.6)
     timing.add_argument("--min-seconds", type=int, default=1)
     timing.add_argument("--max-seconds", type=int)
-    timing.add_argument("--units-per-second", type=float, default=3.5)
+    timing.add_argument("--units-per-second", type=float, help="Override the estimate speed; by default about 4.6 units/s scaled by the narration rate")
     timing.add_argument("--preserve-planned", action="store_true")
     timing.add_argument("--apply", action="store_true", help="Write measured durations and windows to the storyboard; re-plan afterwards")
     inspect = commands.add_parser("inspect", help="Probe actual media, optionally fully decode and export small JPEG frames")
@@ -186,6 +190,16 @@ def parser():
     sheet.add_argument('--columns', type=int, default=4)
     sheet.add_argument('--max-cells', type=int, default=24)
     sheet.add_argument('--jpeg-quality', type=int, default=80)
+    compare = commands.add_parser('compare', help='把多个图片或视频的画面并排、叠合或局部放大，用于挑候选、比方向、核对剪点和查小字')
+    compare.add_argument('inputs', nargs='+', help='图片或视频；视频可写 FILE@秒数 只取这一帧')
+    compare.add_argument('--output', required=True)
+    compare.add_argument('--at', type=float, action='append', help='视频内的显示时刻，可重复；每个视频一行，图上标注实际帧时间')
+    compare.add_argument('--overlay', action='store_true', help='把各输入的一帧等权叠合，核对位置是否对齐')
+    compare.add_argument('--crop', help='x,y,宽,高（0–1 比例），所有画面裁同一区域放大')
+    compare.add_argument('--label', action='append', help='每个输入的标签，按顺序；中文标签需同时给 --font-file')
+    compare.add_argument('--font-file')
+    compare.add_argument('--cell-width', type=int, default=320)
+    compare.add_argument('--columns', type=int, default=4)
     preview = commands.add_parser("preview", help="Export a standalone review page with compressed frames and optional final video")
     preview.add_argument("project")
     preview.add_argument("--output")
@@ -260,6 +274,10 @@ def dispatch(args):
                              expected_loudness_lufs=args.expect_loudness_lufs, loudness_tolerance=args.loudness_tolerance,
                              scan=args.scan, freeze_seconds=args.freeze_seconds, silence_seconds=args.silence_seconds,
                              timeline=args.timeline)
+    if args.command == 'compare':
+        from .compare import compare_board
+        return compare_board(args.inputs, output=args.output, at=args.at, overlay=args.overlay, crop=args.crop,
+                             labels=args.label, cell_width=args.cell_width, columns=args.columns, font_file=args.font_file)
     if args.command == 'sheet':
         from .sheet import contact_sheet
         if args.cuts and (args.start is not None or args.end is not None):
@@ -310,7 +328,7 @@ def dispatch(args):
         if args.font_file:
             from .text_overlay import _font
             try:
-                _font(Path.cwd(),{'subtitle_font_file':args.font_file,'subtitle_font_size':13,'height':720})
+                _font(Path.cwd(),{'subtitle_font_file':args.font_file,'subtitle_font_index':args.font_index,'subtitle_font_size':13,'height':720})
                 checks.append({'name':'readable_font','passed':True})
             except NTFError as exc:
                 checks.append({'name':'readable_font','passed':False,'error_code':exc.code})
@@ -334,7 +352,8 @@ def dispatch(args):
         for argument, field_name in (("width", "width"), ("height", "height"), ("fps", "fps"),
                                      ("subtitles", "subtitles_mode"), ("audio_tracks", "audio_tracks"),
                                      ("subtitle_renderer", "subtitle_renderer"),
-                                     ("font_file", "subtitle_font_file"), ("font_size", "subtitle_font_size"),
+                                     ("font_file", "subtitle_font_file"), ("font_index", "subtitle_font_index"),
+                                     ("font_size", "subtitle_font_size"),
                                      ('loudness_lufs','audio_loudness_lufs'),('true_peak_db','audio_true_peak_db')):
             value = getattr(args, argument)
             if value is not None:
@@ -381,6 +400,9 @@ def dispatch(args):
         if args.command == "ready":
             return {"project": str(project.root), "ready": [a for a in result["actions"] if a["ready"]],
                     "resumable": [a for a in result["actions"] if a["status"] in ("submitted", "waiting_download")]}
+        if getattr(args, "usage", False):
+            from .workflow import usage
+            result["usage"] = usage(project)
         return result
     if args.command == "run":
         with connection_environment(load_config(args.config), args.connections_file) as config:

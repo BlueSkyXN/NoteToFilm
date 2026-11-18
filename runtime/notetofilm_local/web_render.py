@@ -27,7 +27,7 @@ from .review_server import ReviewHandler
 BROWSER_ARGS = ['--force-color-profile=srgb', '--font-render-hinting=none', '--hide-scrollbars',
                 '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader',
                 '--autoplay-policy=no-user-gesture-required'] + (['--use-angle=metal'] if sys.platform == 'darwin' else [])
-READY = "() => typeof window.render === 'function' && (window.READY === true || window.READY === undefined)"
+READY = "() => typeof window.render === 'function' && (!('READY' in window) || window.READY === true)"
 RENDER = "async t => { await window.render(t); }"
 RENDER_AND_COLLECT = "async t => { window.__ntfText.reset(); await window.render(t); return window.__ntfText.collect(); }"
 TEXT_HOOK = Path(__file__).with_name('data') / 'text_hook.js'

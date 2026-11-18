@@ -12,6 +12,8 @@
 | `state.json` | 命令登记动作、尝试、素材、采用关系与成片。不要由多个 Agent 各自读改写整份文件。 |
 | `renders/` | 每次实际输出及其时间表、媒体选择。保留旧结果。 |
 
+图像和视频的新尝试在 `state.json` 以可选字段 `submission_started` 记录是否已进入提交请求的传输步骤。已有项目可直接读取，旧尝试的提交状态依据任务 ID、返回结果、登记素材和错误诊断判断。
+
 主分镜使用 `scenes[].id` 作为固定镜头 ID，数组位置表示顺序。正式旁白只维护 `narration`；阅读版不是第二份正文。分镜驱动的工作流改稿后再次 `ntf plan`；独立候选加显式合成清单的路线同步更新主分镜、配音和清单，并保留已有动作 ID 与采用关系。
 
 基本镜头字段：`id`、`narration`、`screen_text`、`visual_prompt`、`visual_type`（`still` 或 `video`）。视频镜头按需增加 `video_prompt`、`video_mode`、`route`、`references`、`start_frame`、`end_frame`、`duration_seconds`。声音策略为 `edge_tts`、`native`、`mix` 或 `silent`。时间单位为秒。
@@ -22,7 +24,7 @@
 
 素材 ID 与镜头 ID 不相互代替。一份素材可以被多镜复用，新候选不覆盖旧文件，采用关系通过 `ntf select` 更新。导入文件与原材料复制应留在项目目录内。
 
-阅读版镜头展示01、02等连续顺序，正式id仍用于动作和素材引用。章节与方向说明可保留在分镜的扩展字段。需要运行代码实际加入定时文字时使用text_overlays：text、start_seconds、end_seconds、position；screen_text本身是导演要求，不自动推断文字出现时点。
+阅读版镜头展示01、02等连续顺序，正式id仍用于动作和素材引用。章节与方向说明可保留在分镜的扩展字段。需要运行代码实际加入定时文字时使用text_overlays：text、start_seconds、end_seconds、position；screen_text本身是导演要求，不自动推断文字出现时点。采用的配音自带逐句字幕；画面上已经写着同一句话的镜头可设 `subtitles: false` 不显示字幕。
 
 素材引用中的media_duration_seconds是实测来源长度；visuals[].duration_seconds是明确要求使用的剪辑长度。二者独立，模型多返回一帧不应自动扩大镜头窗口。独立旁白的narration_start_seconds控制镜内开始时间；使用现成audio对象时在audio.start_seconds设置。
 

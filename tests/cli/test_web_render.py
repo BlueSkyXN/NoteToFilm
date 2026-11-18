@@ -16,6 +16,18 @@ STARTER = ROOT / '.agents/skills/notetofilm-compose/assets/code-animation'
 
 
 class WebRenderEntryTests(unittest.TestCase):
+    def test_readiness_uses_the_open_document_with_unloaded_sibling_scripts(self):
+        (self.page_dir / 'alternate.js').write_text('window.READY = true;')
+        api = mock.MagicMock()
+        with mock.patch.dict(sys.modules, {'playwright.sync_api': api}):
+            session = web_render._Session(self.project, self.page_dir / 'index.html',
+                                          {'width': 160, 'height': 90, 'fps': 10}, 1, 1)
+            try:
+                view = session.open()
+                view.wait_for_function.assert_called_once_with(web_render.READY, timeout=120000)
+            finally:
+                session.close()
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix='ntf-web-')
         self.addCleanup(temp.cleanup)

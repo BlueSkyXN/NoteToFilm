@@ -98,7 +98,7 @@ Canvas 2D 或 SVG，自己写等距投影函数 `iso(x, y, z) → [sx, sy]`（sx
 - **图片生成**：提示词写 isometric illustration, 30-degree view, flat shading, soft shadow, clean background，加上场景中的对象。生成图的透视和物件比例常前后不一；多镜使用同一张底图，用裁切推近换景别，分步搭建交给代码动画。
 - **视频生成**：等距视角容易漂成普通透视；只适合小幅环境动态（流动、灯光），并用首帧约束。
 - **`ntf motion`**：在底图上用 draw 图层画箭头路径与标签，`reveal` 逐层显露。
-- **代码动画**：用 `camera3d`（俯角约 35°、水平转 45°）配 `drawBoxes` 搭方块，`stagger` 安排依次落位，`drawPath` 表示流向。
+- **代码动画**：用 `camera3d`（俯角约 35°、水平转 45°）配 `drawBoxes` 搭方块，`stagger` 安排依次落位，`drawPath` 表示流向。`camera3d` 是透视相机，需要严格等距时自己写投影 `sx = (x − z)·cos30°·s`、`sy = (x + z)·0.5·s − y·s`，每个方块只画顶面、+x 面、+z 面，按 x+z 从远到近绘制。“剖开的方块”：去掉近侧壁，顶壁和遮挡的面板半透明（约 0.4），要比较的边缘用强调色描出；两个剖面沿屏幕水平方向并排时，第二个的偏移取 (+d, −d)，屏幕高度不变。
 - **准确文字**：模块名称和数字作为文字图层叠加，不放进生成图。
 
 来源：改编自 garden-skills motion-showreel 风格库（MIT License，见 NoteToFilm 仓库根目录 THIRD_PARTY_NOTICES.md），补充了 NoteToFilm 的制作方式。

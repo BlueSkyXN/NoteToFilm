@@ -63,6 +63,8 @@ def _claim(project, action, request, retry=False, force=False):
             attempt = {"id": attempt_id, "action_id": action["id"], "kind": action["kind"],
                        "status": "running", "fingerprint": fingerprint, "started_at": now(),
                        "owner_pid": os.getpid(), "outputs": []}
+            if action["kind"] in ("image", "video"):
+                attempt["submission_started"] = False
             atomic_json(_attempt_path(project, attempt_id, "request.json"), request)
             state["attempts"][attempt_id] = attempt
             record.update({"status": "running", "current_attempt": attempt_id, "error": None})
@@ -128,6 +130,8 @@ def _prepare_manifest(project, manifest):
     manifest = copy.deepcopy(manifest)
     for scene in manifest.get("scenes", []):
         audio = scene.get("audio")
+        if scene.get("subtitles") is False:
+            continue
         if isinstance(audio, dict) and audio.get("subtitles_path") and not scene.get("subtitles_path"):
             scene["subtitles_path"] = audio["subtitles_path"]
     return manifest
@@ -199,8 +203,8 @@ def execute_action(project, action, config=None, retry=False, force=False, resum
                 route = read_json(route_path)
             else:
                 route = resolve_route(config if config is not None else load_config(), request.get("route"), kind)
-                check_request(route, request)
                 atomic_json(route_path, route)
+                check_request(route, request)
             adapter = get_adapter(route)
             response_path = _attempt_path(project, tid, "response.json")
             if resumed and attempt.get("response_path") and (attempt.get("status") in ("waiting_download", "complete") or project.state["actions"][aid].get("status") == "missing_result"):
@@ -209,6 +213,7 @@ def execute_action(project, action, config=None, retry=False, force=False, resum
                 result = adapter.poll(attempt["job"])
             else:
                 # Route mismatch is reported before submit; no automatic POST retries.
+                adapter.before_submit = lambda: _persist(project, aid, tid, submission_started=True)
                 result = adapter.submit(request, project.root)
             if not isinstance(result, dict) or result.get("status") not in ("submitted", "succeeded", "failed"):
                 raise NTFError("adapter_result", "Adapter returned an invalid normalized result.")

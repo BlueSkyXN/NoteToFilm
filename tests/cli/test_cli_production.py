@@ -110,6 +110,14 @@ class ProductionCLITests(unittest.TestCase):
                 'audio':{'asset_id':a['id']},'visuals':[{'asset_id':v['id']}]}]})
             self.call('storyboard',project,'--file',board)
             estimate=self.call('timing',project,'--mode','estimate');self.assertFalse(estimate['scenes'][0]['measured'])
+            # 'Offline fixture' is two Latin words = 4 units at the calibrated speed; a slower rate lengthens the estimate.
+            self.assertAlmostEqual(estimate['scenes'][0]['estimated_seconds'],4/4.6,places=2)
+            self.call('settings',project,'--rate=-20%')
+            slower=self.call('timing',project,'--mode','estimate')['scenes'][0]
+            self.assertAlmostEqual(slower['units_per_second'],4.6*.8,places=3)
+            fixed=self.call('timing',project,'--mode','estimate','--units-per-second','2')['scenes'][0]
+            self.assertEqual(fixed['units_per_second'],2)
+            self.call('settings',project,'--rate=+0%')
             self.call('timing',project,'--apply','--lead-seconds','.2','--tail-seconds','.6','--min-seconds','2','--max-seconds','15')
             original=(project/'storyboard.json').read_bytes()
             from notetofilm_local.timing import narration_timing
