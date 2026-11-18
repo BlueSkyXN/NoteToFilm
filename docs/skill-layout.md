@@ -26,16 +26,21 @@ NoteToFilm/
 │   ├── notetofilm-direct/         # 方案与分镜
 │   │   ├── SKILL.md
 │   │   ├── assets/
-│   │   │   ├── design-brief.template.md  # 设计选择、段落卡、转场对与音画表
+│   │   │   ├── design-brief.template.md  # 设计摘要、美术设定、段落卡、转场对、音画表与草图粗剪
 │   │   │   └── style-recipe.template.md  # 可复用的风格配方
 │   │   └── references/
-│   │       ├── design-map.md      # 叙事 × 制作路线 × 视觉语言
-│   │       ├── story-design.md    # 案例故事、原理解释、观点论证
-│   │       ├── visual-language.md # 画风、动作、运镜和转场
-│   │       ├── shot-freedom.md    # 单镜约束和开放范围
+│   │       ├── design-map.md      # 片型 × 制作路线 × 视觉语言 × 声音
+│   │       ├── formats.md         # 片型配方：十种片型的结构、开头、手法与坑
+│   │       ├── story-design.md    # 叙事方式、事实依据、段落与节拍、节奏和时长
+│   │       ├── script.md          # 旁白与画面文字
+│   │       ├── art-direction.md   # 美术设定、风格比较、构图分区、参考编号与一致性
+│   │       ├── sound-design.md    # 四层声音与声音方向
+│   │       ├── visual-language.md # 画风、动作、运镜和转场的总体原则
+│   │       ├── techniques/        # 手法卡：camera.md（C01–C14）、info-motion.md（M01–M16）、transitions.md（T01–T15）
+│   │       ├── shot-freedom.md    # 单镜约束、动作三状态和镜头覆盖
 │   │       ├── examples.md        # 正式分镜字段示例
-│   │       ├── pitfalls.md        # 常见默认做法与修正
-│   │       ├── styles/            # 风格库：INDEX.md 与各风格文件
+│   │       ├── pitfalls.md        # 常见默认做法、修正与返工诊断
+│   │       ├── styles/            # 风格库：INDEX.md 与各风格文件（人物与场景、影像、证据与拼贴、图形与讲解）
 │   │       └── routes/
 │   │           ├── evidence-led.md
 │   │           ├── image-led.md
@@ -43,10 +48,11 @@ NoteToFilm/
 │   │           ├── footage-led.md
 │   │           └── hybrid.md     # 按章节组合上述路线
 │   ├── notetofilm-image/
-│   │   └── references/providers/cpa-images.md
+│   │   └── references/{image-design,prompts}.md、providers/cpa-images.md
 │   ├── notetofilm-video/
 │   │   └── references/
 │   │       ├── modes.md
+│   │       ├── action-prompts.md  # 动作镜头与运镜写法
 │   │       ├── providers/uniapi-seedance.md
 │   │       ├── resume.md
 │   │       └── footage-review.md
@@ -54,7 +60,7 @@ NoteToFilm/
 │   │   └── references/voice-and-subtitles.md
 │   └── notetofilm-compose/
 │       ├── assets/code-animation/  # 代码动画骨架：index.html、timing.js、motion.js
-│       └── references/{timeline,manifest,motion,code-animation,code-recipes,motion-craft,toolbox,delivery}.md
+│       └── references/{timeline,manifest,motion,code-animation,code-recipes,motion-craft,toolbox,sound-mix,delivery}.md
 ├── shared/                       # 运行说明的维护源
 │   ├── runtime.md
 │   ├── project-format.md
@@ -77,7 +83,7 @@ NoteToFilm/
 
 ## 玩法怎么分
 
-[设计选择图](../.agents/skills/notetofilm-direct/references/design-map.md) 是唯一的设计路线入口。先选择如何讲述，再选证据图解、图片驱动、视频驱动或现有素材剪辑。混合编排按章节组合这些路线。画风和模型各自独立：灰阶棱面不限定输入必须是图，故事叙事也不限定必须让模型生成人物表演。
+[设计选择图](../.agents/skills/notetofilm-direct/references/design-map.md) 是唯一的设计路线入口。先选片型和讲述方式，再选证据图解、图片驱动、视频驱动或现有素材剪辑，最后定视觉语言和声音。段落里的具体手法按问题查手法卡（观察方式、信息变化、衔接方式），卡号和目的写进段落卡。混合编排按章节组合这些路线。画风和模型各自独立：灰阶棱面不限定输入必须是图，故事叙事也不限定必须让模型生成人物表演。
 
 导演先给出事件或解释任务、必须保持的事实、允许发挥的部分及验收点。媒体技能将其转成当前通道真实支持的请求。后期按实际素材与声音安排窗口；模型参数放进原有项目字段，路线名称留在制作说明或备稿，不扩展运行 schema。
 
