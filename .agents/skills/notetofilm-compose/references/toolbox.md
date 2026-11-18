@@ -59,7 +59,7 @@ ffmpeg -f lavfi -i "anoisesrc=color=brown:amplitude=0.5:seed=7:sample_rate=48000
 ffmpeg -i roomtone.wav -af astats=metadata=0 -f null - 2>&1 | grep 'RMS level'   # 目标约 -46 dB
 ```
 
-导入后 `--select film.background`，清单里 `"background_audio": {"selection": "film.background", "volume": 1.0, "loop": true}`。合成后用 `ntf inspect FILM --scan` 定位预期有底声的停顿，结合 `digital_silence_seconds` 复听底声是否连续。抽测某一时刻的电平用采样精确的截取：`ffmpeg -i film.mp4 -map 0:a -af "atrim=start=20.7:duration=0.6,volumedetect" -f null -`；把 `-ss`、`-t` 放在 `-i` 前截取不到一秒的片段时，读数可能不准。
+导入后 `--select film.background`，清单里 `"background_audio": {"selection": "film.background", "volume": 1.0, "loop": true}`。底噪之外还要按时间放音效、或加一条在旁白处让位的音乐时，按 [声音后期](sound-mix.md) 把它们预混成一条底声。合成后用 `ntf inspect FILM --scan` 定位预期有底声的停顿，结合 `digital_silence_seconds` 复听底声是否连续。抽测某一时刻的电平用采样精确的截取：`ffmpeg -i film.mp4 -map 0:a -af "atrim=start=20.7:duration=0.6,volumedetect" -f null -`；把 `-ss`、`-t` 放在 `-i` 前截取不到一秒的片段时，读数可能不准。
 
 本机 FFmpeg 若没有 `drawtext` 和 `subtitles` 滤镜，文字用合成清单的 `text_overlays`、`ntf motion` 或 ImageMagick 生成。
 
