@@ -16,18 +16,17 @@ STARTER = ROOT / '.agents/skills/notetofilm-compose/assets/code-animation'
 
 
 class WebRenderEntryTests(unittest.TestCase):
-    def test_pages_that_assign_ready_wait_for_ready_true(self):
-        from notetofilm_local import web_render as wr
-        with tempfile.TemporaryDirectory(prefix='ntf-ready-') as tmp:
-            page = Path(tmp) / 'index.html'
-            page.write_text('<script type="module">import { r } from "./scene.js"; window.render = r;</script>')
-            (Path(tmp) / 'scene.js').write_text('export const r = t => {}; // window.READY === true is checked elsewhere\n')
-            self.assertFalse(wr._declares_ready(page))
-            (Path(tmp) / 'scene.js').write_text('export const r = t => {};\nwindow.READY = false;\n')
-            self.assertTrue(wr._declares_ready(page))
-        self.assertTrue(wr._declares_ready(STARTER / 'index.html'))
-        self.assertIn('window.READY === true', wr.READY_STRICT)
-        self.assertNotIn('undefined', wr.READY_STRICT)
+    def test_readiness_uses_the_open_document_with_unloaded_sibling_scripts(self):
+        (self.page_dir / 'alternate.js').write_text('window.READY = true;')
+        api = mock.MagicMock()
+        with mock.patch.dict(sys.modules, {'playwright.sync_api': api}):
+            session = web_render._Session(self.project, self.page_dir / 'index.html',
+                                          {'width': 160, 'height': 90, 'fps': 10}, 1, 1)
+            try:
+                view = session.open()
+                view.wait_for_function.assert_called_once_with(web_render.READY, timeout=120000)
+            finally:
+                session.close()
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix='ntf-web-')

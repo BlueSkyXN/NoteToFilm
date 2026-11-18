@@ -236,7 +236,7 @@ class Project:
                 if not path.is_file():
                     raise NTFError("missing_input", "Input file is missing.", {"path": result["path"]})
                 result["path"] = path.relative_to(self.root).as_posix()
-                result.setdefault("sha256", file_digest(path))
+                result["sha256"] = file_digest(path)
             return result
 
         return visit(value)

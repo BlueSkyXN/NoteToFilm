@@ -98,11 +98,11 @@ NoteToFilm 由三部分协作：Agent 做判断，Skill 提供方法，NoteToFil
 | `text_overlay.py` | `compose` 的字幕与配字 | FFmpeg subtitles 滤镜或 Pillow 逐帧绘制；也可内封为字幕轨 |
 | `motion.py`、`motion_render.py` | `motion` | Pillow 绘制参数化图层与关键帧 |
 | `web_render.py` | `web-render` | Playwright 驱动 Chrome 或 Chromium，调用页面的 `render(t)` 逐帧截图 |
-| `sheet.py`、`compare.py`、`inspection.py` | `sheet`、`compare`、`inspect` | 按时间抽帧拼联系表；多画面并排、叠合与局部放大；探测、全量解码、冻结／黑场／静音检测（区分数字静音） |
+| `sheet.py`、`compare.py`、`inspection.py` | `sheet`、`compare`、`inspect` | 按时间抽帧拼联系表；多画面并排、叠合与局部放大；探测、全量解码、冻结、黑场与停顿检测（区分极低电平与全声道零样本） |
 | `loudness.py` | `normalize` | 双遍 loudnorm；复制第一条视频，只处理第一条音轨 |
 | `preview.py`、`review_server.py` | `preview`、`serve` | 导出审阅页；本地服务支持拖动进度 |
 | `config.py` | `routes`、`config-init` | 读取路由配置、连接来源 |
-| `project.py`、`workflow.py`、`runner.py` | `init`、`plan`、`run` 等 | 项目文件、计划生成、执行与登记 |
+| `project.py`、`workflow.py`、`runner.py`、`usage.py` | `init`、`plan`、`run` 等 | 项目文件、计划生成、执行与登记 |
 
 ## 分发形态
 

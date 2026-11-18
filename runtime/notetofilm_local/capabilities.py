@@ -26,28 +26,30 @@ def request_parameters(request: dict, defaults: dict | None = None) -> dict:
     """Merge route defaults with the request; explicit values replace defaults, and two
     different explicit values for the same parameter (parameters, output, top-level
     duration_seconds) are a conflict."""
-    params, explicit = {}, set()
-    def merge(items, from_default=False):
+    def merge(target, items):
         if not isinstance(items, dict):
             raise NTFError("request_invalid", "parameters and output must be objects.")
         for key, value in items.items():
             canonical = ALIASES.get(key, key)
-            if canonical in explicit and params[canonical] != value:
+            if canonical in target and target[canonical] != value:
                 raise NTFError("parameter_conflict", "The same generation parameter has conflicting values.", {"parameter": canonical})
-            params[canonical] = value
-            if not from_default:
-                explicit.add(canonical)
-    merge(defaults or {}, from_default=True)
-    merge(request.get("parameters", {}))
-    output = dict(request.get("output", {}))
+            target[canonical] = value
+
+    params, explicit = {}, {}
+    merge(params, defaults or {})
+    merge(explicit, request.get("parameters", {}))
+    output = request.get("output", {})
+    if not isinstance(output, dict):
+        raise NTFError("request_invalid", "output must be an object.")
+    output = output.copy()
     if "width" in output or "height" in output:
         if any(type(output.get(k)) is not int or output[k] <= 0 for k in ("width", "height")):
             raise NTFError("request_invalid", "Output width and height must both be positive integers.")
-        output["size"] = f'{output.pop("width")}x{output.pop("height")}'
-    merge(output)
+        merge(explicit, {"size": f'{output.pop("width")}x{output.pop("height")}'})
+    merge(explicit, output)
     if "duration_seconds" in request:
-        merge({"duration_seconds": request["duration_seconds"]})
-    return params
+        merge(explicit, {"duration_seconds": request["duration_seconds"]})
+    return {**params, **explicit}
 
 
 def _value_matches(value, rule: dict) -> bool:

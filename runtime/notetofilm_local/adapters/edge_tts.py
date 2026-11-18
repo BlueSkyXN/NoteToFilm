@@ -38,7 +38,7 @@ def _load_edge_tts():
     return package
 
 
-SENTENCE_END = set("。！？!?；;")
+SENTENCE_END = set("。！？.!?；;")
 SOFT_BREAK = set("，,：:")
 CUE_MIN_CHARS = 8
 CUE_MAX_CHARS = 22
@@ -61,28 +61,26 @@ def _word_cues(spoken, words):
         if not token:
             continue
         found = spoken.find(token, cursor)
-        if found < 0 or re.search(r"[^\s\W]", spoken[cursor:found]):
+        if found < 0 or re.search(r"\w", spoken[cursor:found]):
             return None
         spans.append((found, found + len(token), word))
         cursor = found + len(token)
-    if not spans:
+    if not spans or re.search(r"\w", spoken[cursor:]):
         return None
     cues, current = [], None
     for index, (begin, end, word) in enumerate(spans):
         tail_end = spans[index + 1][0] if index + 1 < len(spans) else len(spoken)
-        piece_start = begin if current is None else current["span_end"]
-        piece = spoken[piece_start:tail_end]
+        piece = spoken[begin if index else 0:tail_end]
         start = word["offset"] / 10_000_000
         stop = (word["offset"] + word["duration"]) / 10_000_000
         if current and _visible(current["text"] + spoken[begin:end]) > CUE_MAX_CHARS:
             cues.append(current)
-            current, piece = None, spoken[begin:tail_end]
+            current = None
         if current is None:
-            current = {"start_seconds": start, "end_seconds": stop, "text": piece.lstrip(), "span_end": tail_end}
+            current = {"start_seconds": start, "end_seconds": stop, "text": piece.lstrip()}
         else:
             current["text"] += piece
             current["end_seconds"] = stop
-            current["span_end"] = tail_end
         trailing = spoken[end:tail_end]
         if any(ch in SENTENCE_END for ch in trailing) or (
                 any(ch in SOFT_BREAK for ch in trailing) and _visible(current["text"]) >= CUE_MIN_CHARS):
@@ -99,12 +97,16 @@ def _word_cues(spoken, words):
 
 
 def _boundary_cues(boundaries, spoken=None):
+    return _subtitles_with_source(boundaries, spoken)[0]
+
+
+def _subtitles_with_source(boundaries, spoken):
     """Use actual service offsets; group word events without invented timings."""
     words = [b for b in boundaries if b["type"] == "WordBoundary"]
     if spoken and words and len(words) == len(boundaries):
         aligned = _word_cues(spoken, words)
         if aligned:
-            return aligned
+            return aligned, "spoken text aligned to service word boundaries"
     cues = []
     current = None
     for boundary in boundaries:
@@ -133,7 +135,7 @@ def _boundary_cues(boundaries, spoken=None):
             current = None
     if current:
         cues.append(current)
-    return cues
+    return cues, "service boundary text" if cues else None
 
 
 async def synthesize_async(text, output_dir, voice="zh-CN-XiaoxiaoNeural", rate="+0%", volume="+0%",
@@ -192,7 +194,7 @@ async def synthesize_async(text, output_dir, voice="zh-CN-XiaoxiaoNeural", rate=
         information = probe(partial)
         if information["kind"] != "audio":
             raise NTFError("audio_response_invalid", "EdgeTTS response is not an audio file.")
-        cues = _boundary_cues(boundaries, spoken)
+        cues, subtitle_source = _subtitles_with_source(boundaries, spoken)
         duration_seconds = information["duration_seconds"]
         warnings = []
         if not cues:
@@ -204,9 +206,7 @@ async def synthesize_async(text, output_dir, voice="zh-CN-XiaoxiaoNeural", rate=
             "text": text, "speech_text": spoken, "voice": voice, "rate": rate, "volume": volume, "pitch": pitch,
             "duration_seconds": duration_seconds, "audio_bytes": audio_bytes,
             "boundary_time_unit": "100 nanoseconds",
-            "subtitle_text_source": ("spoken text aligned to service word boundaries"
-                                     if cues and boundaries and all(b["type"] == "WordBoundary" for b in boundaries)
-                                     else "service boundary text"),
+            "subtitle_text_source": subtitle_source,
             "warnings": warnings,
         }
         boundaries_path.write_text(json.dumps(boundaries, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

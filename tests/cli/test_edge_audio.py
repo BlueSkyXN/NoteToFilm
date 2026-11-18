@@ -44,19 +44,25 @@ class EdgeAudioTests(unittest.TestCase):
             self.assertEqual(Path(result["audio_path"]).read_bytes(), audio)
 
     def test_word_boundaries_become_short_punctuated_cues(self):
-        from notetofilm_local.adapters.edge_tts import _boundary_cues
+        from notetofilm_local.adapters.edge_tts import _boundary_cues, _subtitles_with_source
         spoken = "清晨，纸船缓缓漂过木桥：让 Pip 在岸边画一颗星。"
         tokens = ["清晨", "纸船", "缓缓", "漂过", "木桥", "让", "Pip", "在", "岸边", "画", "一颗", "星"]
         events = [{"type": "WordBoundary", "offset": i * 5_000_000, "duration": 3_000_000, "text": token}
                   for i, token in enumerate(tokens)]
-        cues = _boundary_cues(events, spoken)
+        cues, source = _subtitles_with_source(events, spoken)
+        self.assertEqual(source, "spoken text aligned to service word boundaries")
         self.assertEqual([c["text"] for c in cues], ["清晨，纸船缓缓漂过木桥：", "让 Pip 在岸边画一颗星。"])
         self.assertEqual(cues[0]["start_seconds"], 0)
         self.assertEqual(cues[0]["end_seconds"], 2.5)
         self.assertAlmostEqual(cues[1]["end_seconds"], 5.8)
         # Words that cannot be matched in order fall back to service text without punctuation recovery.
-        fallback = _boundary_cues(events, "完全不同的文本")
+        fallback, source = _subtitles_with_source(events, "完全不同的文本")
         self.assertTrue(fallback and "，" not in fallback[0]["text"])
+        self.assertEqual(source, "service boundary text")
+        incomplete, source = _subtitles_with_source(events[:1], "清晨。纸船已经出发。")
+        self.assertEqual([cue["text"] for cue in incomplete], ["清晨"])
+        self.assertEqual(source, "service boundary text")
+        self.assertEqual(_boundary_cues(events[:1], "清晨。纸船已经出发。"), incomplete)
 
     def test_provider_error_does_not_expose_query_token(self):
         class Communicate:

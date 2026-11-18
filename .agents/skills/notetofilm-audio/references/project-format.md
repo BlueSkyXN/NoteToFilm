@@ -12,6 +12,8 @@
 | `state.json` | 命令登记动作、尝试、素材、采用关系与成片。不要由多个 Agent 各自读改写整份文件。 |
 | `renders/` | 每次实际输出及其时间表、媒体选择。保留旧结果。 |
 
+图像和视频的新尝试在 `state.json` 以可选字段 `submission_started` 记录是否已进入提交请求的传输步骤。已有项目可直接读取，旧尝试的提交状态依据任务 ID、返回结果、登记素材和错误诊断判断。
+
 主分镜使用 `scenes[].id` 作为固定镜头 ID，数组位置表示顺序。正式旁白只维护 `narration`；阅读版不是第二份正文。分镜驱动的工作流改稿后再次 `ntf plan`；独立候选加显式合成清单的路线同步更新主分镜、配音和清单，并保留已有动作 ID 与采用关系。
 
 基本镜头字段：`id`、`narration`、`screen_text`、`visual_prompt`、`visual_type`（`still` 或 `video`）。视频镜头按需增加 `video_prompt`、`video_mode`、`route`、`references`、`start_frame`、`end_frame`、`duration_seconds`。声音策略为 `edge_tts`、`native`、`mix` 或 `silent`。时间单位为秒。

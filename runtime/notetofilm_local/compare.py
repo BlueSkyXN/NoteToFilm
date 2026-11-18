@@ -1,6 +1,9 @@
 """Side-by-side boards for comparing candidates, directions, cut alignment and small details."""
 from __future__ import annotations
 
+from bisect import bisect_right
+from fractions import Fraction
+import json
 import math
 import shutil
 import tempfile
@@ -46,21 +49,75 @@ def _crop(value):
     return x, y, w, h
 
 
-def _frame(source, info, at, work, index, label):
-    """Return a PIL image for an image file or one video frame."""
+def _video_stills(source, info, moments, work, row):
+    """Match presentation intervals, including variable-rate video and nonzero starting PTS."""
+    stream = str(info['video_stream_index'])
+    probe_result = run_media_command(
+        ['ffprobe', '-v', 'error', '-select_streams', stream, '-show_entries',
+         'stream=time_base,start_pts,duration_ts:frame=best_effort_timestamp,duration,pkt_duration',
+         '-of', 'json', str(source)], timeout=300)
+    data = json.loads(probe_result.stdout)
+    frames = data.get('frames', [])
+    try:
+        ticks = [int(frame['best_effort_timestamp']) for frame in frames]
+        stream_info = data['streams'][0]
+        unit = Fraction(stream_info['time_base'])
+        first, last = ticks[0], ticks[-1]
+    except (KeyError, IndexError, ValueError, TypeError, ZeroDivisionError):
+        raise NTFError('compare_no_frame', '视频缺少可定位画面的时间戳。', {'input': str(source)}) from None
+    if unit <= 0 or any(b < a for a, b in zip(ticks, ticks[1:])):
+        raise NTFError('compare_no_frame', '视频帧的显示时间顺序无效。', {'input': str(source)})
+
+    duration = Fraction(str(info['duration_seconds']))
+    if stream_info.get('duration_ts') is not None:
+        duration = (int(stream_info.get('start_pts', first)) + int(stream_info['duration_ts']) - first) * unit
+    else:
+        last_duration = frames[-1].get('duration') or frames[-1].get('pkt_duration')
+        if last_duration and int(last_duration) > 0:
+            duration = (last - first + int(last_duration)) * unit
+    indices = []
+    for moment in moments:
+        at = Fraction(str(moment))
+        if not 0 <= at < duration:
+            raise NTFError('compare_parameters', '取帧时刻须在视频时长内。', {
+                'input': str(source), 'requested_seconds': moment, 'duration_seconds': float(duration)})
+        indices.append(bisect_right(ticks, first + at / unit) - 1)
+    unique = sorted(set(indices))
+    select = '+'.join(f'eq(n\\,{i})' for i in unique)
+    pattern = work / f'{row}-%03d.png'
+    run_media_command(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', str(source),
+                       '-map', '0:' + stream, '-vf', 'select=' + select, '-fps_mode', 'passthrough',
+                       '-frames:v', str(len(unique)), '-start_number', '0', str(pattern)], timeout=300)
+    files = {index: work / f'{row}-{n:03d}.png' for n, index in enumerate(unique)}
+    if any(not path.is_file() for path in files.values()):
+        raise NTFError('compare_no_frame', '未能解码指定视频帧。', {'input': str(source)})
+    return [(files[i], float((ticks[i] - first) * unit)) for i in indices]
+
+
+def _crop_frame(frame, region):
+    if region is None:
+        return frame
+    x, y, w, h = region
+    left, top = round(x * frame.width), round(y * frame.height)
+    right, bottom = round((x + w) * frame.width), round((y + h) * frame.height)
+    if right <= left or bottom <= top:
+        raise NTFError('compare_parameters', '裁区取整后不足一个像素，请增大宽或高。',
+                       {'input_size': list(frame.size), 'crop': region})
+    return frame.crop((left, top, right, bottom))
+
+
+def _fit(frame, size):
+    """Center this frame in the common canvas, preserving its aspect ratio."""
     from PIL import Image
-    if info['kind'] == 'image':
-        with Image.open(source) as image:
-            return image.convert('RGB')
-    duration = info.get('duration_seconds') or 0
-    t = min(at, max(0.0, duration - 1 / max(1.0, info.get('fps') or 30)))
-    target = work / f'{index:03d}_{label}.png'
-    run_media_command(['ffmpeg', '-hide_banner', '-nostdin', '-ss', f'{t:.6f}', '-i', str(source),
-                       '-frames:v', '1', '-y', str(target)], timeout=120)
-    if not target.is_file():
-        raise NTFError('compare_no_frame', '没能从视频中取出这一时刻的画面。', {'input': str(source), 'time_seconds': t})
-    with Image.open(target) as image:
-        return image.convert('RGB')
+    width, height = size
+    scale = min(width / frame.width, height / frame.height)
+    w, h = max(1, round(frame.width * scale)), max(1, round(frame.height * scale))
+    fitted = frame.resize((w, h), Image.Resampling.LANCZOS)
+    if fitted.size == size:
+        return fitted
+    canvas = Image.new('RGB', size, (24, 24, 24))
+    canvas.paste(fitted, ((width - w) // 2, (height - h) // 2))
+    return canvas
 
 
 def _font(font_file, size):
@@ -86,7 +143,7 @@ def compare_board(inputs, *, output, at=None, overlay=False, crop=None, labels=N
     enlarged, for checking small text and details.
     """
     try:
-        from PIL import Image, ImageDraw
+        from PIL import Image, ImageDraw, ImageOps
     except ImportError as exc:
         raise NTFError('render_dependency_missing', '对比表需要 render 依赖中的 Pillow。') from exc
     if not inputs or len(inputs) > MAX_INPUTS:
@@ -119,6 +176,7 @@ def compare_board(inputs, *, output, at=None, overlay=False, crop=None, labels=N
     output.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='frames-', dir=output))
     rows = []
+    cell_size = None
     try:
         for i, ((path, suffix_at), info) in enumerate(zip(parsed, infos)):
             if info['kind'] == 'image' or suffix_at is not None or overlay:
@@ -128,17 +186,20 @@ def compare_board(inputs, *, output, at=None, overlay=False, crop=None, labels=N
                     raise NTFError('compare_parameters', '视频输入需要 --at 时刻，或在文件名后写 @秒数。', {'input': str(path)})
                 moments = times
             cells = []
-            for n, t in enumerate(moments):
-                frame = _frame(path, info, t or 0.0, work, i * MAX_TIMES + n, f'{i}')
-                if region:
-                    x, y, w, h = region
-                    frame = frame.crop((round(x * frame.width), round(y * frame.height),
-                                        round((x + w) * frame.width), round((y + h) * frame.height)))
-                cells.append({'time_seconds': t, 'image': frame})
+            stills = [(path, None)] if info['kind'] == 'image' else _video_stills(path, info, moments, work, i)
+            for requested, (still, actual) in zip(moments, stills):
+                with Image.open(still) as image:
+                    frame = _crop_frame(ImageOps.exif_transpose(image).convert('RGB'), region)
+                if cell_size is None:
+                    width = cell_width * 2 if overlay else cell_width
+                    height = max(40, min(width * 2, round(width * frame.height / frame.width)))
+                    cell_size = (width, height)
+                cells.append({'requested': requested, 'time_seconds': actual, 'image': _fit(frame, cell_size)})
             rows.append({'label': names[i], 'input': str(path), 'kind': info['kind'], 'cells': cells})
         font, small = _font(font_file, 16), _font(font_file, 13)
         record = {'inputs': [{'label': r['label'], 'input': r['input'], 'kind': r['kind'],
-                              'times': [c['time_seconds'] for c in r['cells']]} for r in rows],
+                              'times': [c['requested'] for c in r['cells']],
+                              'frame_times': [c['time_seconds'] for c in r['cells']]} for r in rows],
                   'crop': region, 'overlay': overlay}
         if overlay:
             frames = [r['cells'][0]['image'] for r in rows]
@@ -147,11 +208,9 @@ def compare_board(inputs, *, output, at=None, overlay=False, crop=None, labels=N
             base = frames[0]
             blended = base.copy()
             for k, frame in enumerate(frames[1:], 2):
-                blended = Image.blend(blended, frame.resize(base.size), 1 / k)
-            scale = cell_width * 2 / base.width
-            blended = blended.resize((round(base.width * scale), round(base.height * scale)))
-            strip_h = round(blended.height / len(frames))
-            strip_w = round(base.width * strip_h / base.height)
+                blended = Image.blend(blended, frame, 1 / k)
+            strip_h = max(1, round(blended.height / len(frames)))
+            strip_w = max(1, round(base.width * strip_h / base.height))
             board = Image.new('RGB', (blended.width + strip_w + 12, max(blended.height, strip_h * len(frames)) + 30), (24, 24, 24))
             draw = ImageDraw.Draw(board)
             draw.text((6, 6), 'overlay (equal weights)  ' + ' + '.join(r['label'] for r in rows), fill=(235, 235, 235), font=font)
@@ -159,11 +218,12 @@ def compare_board(inputs, *, output, at=None, overlay=False, crop=None, labels=N
             for k, (frame, row) in enumerate(zip(frames, rows)):
                 thumb = frame.resize((strip_w, strip_h))
                 board.paste(thumb, (blended.width + 12, 30 + k * strip_h))
-                draw.text((blended.width + 16, 32 + k * strip_h), row['label'], fill=(255, 214, 102), font=small)
+                actual = row['cells'][0]['time_seconds']
+                stamp = '' if actual is None else f'  {actual:.3f}s'
+                draw.text((blended.width + 16, 32 + k * strip_h), row['label'] + stamp, fill=(255, 214, 102), font=small)
         else:
             single = all(len(r['cells']) == 1 for r in rows)
-            sample = rows[0]['cells'][0]['image']
-            cell_h = max(40, round(cell_width * sample.height / sample.width))
+            cell_h = cell_size[1]
             label_h, gap, side = 20, 6, 0 if single else 150
             if single:
                 ncol = min(columns, len(rows))
@@ -173,8 +233,8 @@ def compare_board(inputs, *, output, at=None, overlay=False, crop=None, labels=N
                 for k, row in enumerate(rows):
                     x, y = gap + (k % ncol) * (cell_width + gap), gap + (k // ncol) * (cell_h + label_h + gap)
                     cell = row['cells'][0]
-                    board.paste(cell['image'].resize((cell_width, cell_h)), (x, y))
-                    stamp = '' if cell['time_seconds'] is None else f"  {cell['time_seconds']:.2f}s"
+                    board.paste(cell['image'], (x, y))
+                    stamp = '' if cell['time_seconds'] is None else f"  {cell['time_seconds']:.3f}s"
                     draw.text((x + 3, y + cell_h + 3), row['label'] + stamp, fill=(255, 214, 102), font=small)
             else:
                 ncol = max(len(r['cells']) for r in rows)
@@ -185,8 +245,8 @@ def compare_board(inputs, *, output, at=None, overlay=False, crop=None, labels=N
                     draw.text((8, y + cell_h // 2 - 8), row['label'], fill=(235, 235, 235), font=font)
                     for n, cell in enumerate(row['cells']):
                         x = side + gap + n * (cell_width + gap)
-                        board.paste(cell['image'].resize((cell_width, cell_h)), (x, y))
-                        stamp = 'image' if cell['time_seconds'] is None else f"{cell['time_seconds']:.2f}s"
+                        board.paste(cell['image'], (x, y))
+                        stamp = 'image' if cell['time_seconds'] is None else f"{cell['time_seconds']:.3f}s"
                         draw.text((x + 3, y + cell_h + 3), stamp, fill=(255, 214, 102), font=small)
         target = output / 'compare.jpg'
         board.save(target, quality=jpeg_quality)

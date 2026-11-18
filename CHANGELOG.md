@@ -6,21 +6,21 @@ CLI 与 Web 分别编号，版本号遵循语义化版本。
 
 ### 变更
 
-- 配音字幕：Edge TTS 改取逐词边界，按原文标点切成短字幕（句末必断，逗号、冒号处满约 8 字断开，每条不超过约 22 字）；逐词与原文对不上时退回服务给的分组，不估算时间。
+- 配音字幕：Edge TTS 改取逐词边界，按原文标点切成短字幕（句末必断，逗号、冒号处满约 8 字断开，每条不超过约 22 字）；词边界缺失或与原文对不上时，按服务提供的词与时间生成字幕，记录实际采用的文本来源。
 - 合成：镜头可设 `"subtitles": false`，不显示该镜字幕，也不自动挂接所采用配音的字幕；`ntf plan` 从分镜带入这一字段。
 - `ntf timing --mode estimate`：默认约每秒 4.6 个发音单位并随 `rate` 换算，英文词按两个单位计（原为每个字母一个），按 10 段实测配音校准后平均误差约 4%；`--units-per-second` 改为可选的固定语速。
-- `ntf web-render`：页面脚本写了 `READY` 赋值时，等到 `window.READY === true` 才开始截图，避免异步准备的资源被提前截图。
+- `ntf web-render`：入口在提供 render 前声明 `window.READY = false` 时，等待当前页面就绪后截图。
 - 字幕与动效文字：新增 `subtitle_font_index`（`ntf settings --font-index`、`install-info --font-index`），可选 TTC/OTC 字体合集中的字形；默认 0 与原行为一致，`ntf motion` 只在非 0 时写入设置，已有动效的复用不受影响。
 
 ### 新增
 
-- `ntf compare`：把多个图片或视频画面排成对比表；视频按 `--at` 时刻每行一条，`FILE@秒数` 取单帧，单帧输入排成宫格；`--overlay` 等权叠合核对剪点两侧位置；`--crop` 对所有画面裁同一区域放大查看小字与细节。
-- `ntf status PROJECT --usage`：按通道汇总图片与视频的请求数、各状态次数、返回媒体数、视频秒数、分辨率和被成片清单引用的数量，用于按通道计费核对花费。
-- `ntf inspect --scan`：每个静音区间附 `digital_silence_seconds`（其中低于 -70 dB 的秒数），区分数字静音和铺了底噪的正常停顿。
+- `ntf compare`：把多个图片或视频画面排成对比表；视频按 `--at` 时刻每行一条，`FILE@秒数` 取单帧，单帧输入排成宫格；`--overlay` 等权叠合核对剪点两侧位置；`--crop` 对所有画面裁同一区域放大查看小字与细节。取帧按显示时间戳定位，混合画幅等比居中。
+- `ntf status PROJECT --usage`：按路由、模型和媒体类型统计本地尝试、提交状态、已登记素材、原始视频秒数和已编码成片的直接引用量。
+- `ntf inspect --scan`：每段停顿分别给出极低电平时长 `near_silence_seconds` 和全声道零样本时长 `digital_silence_seconds`。
 
 ### 修复
 
-- 生成请求的 `output`（如 `count`）可以覆盖路由默认值；`parameters`、`output` 与顶层 `duration_seconds` 之间给出不同值时仍报 `parameter_conflict`。
+- 生成请求的 `output`（如 `count`）可以覆盖路由默认值；`parameters`、`output` 与顶层 `duration_seconds` 之间给出不同值时仍报 `parameter_conflict`。路由默认值内部的别名冲突同样会在发送前报错。
 
 ### Skill
 

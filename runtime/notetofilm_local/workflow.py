@@ -8,6 +8,7 @@ from pathlib import Path
 from .errors import NTFError
 from .io import atomic_json, digest, file_digest, now, project_lock
 from .project import Project, check_id
+from .usage import usage
 
 KINDS = {"image", "video", "audio", "compose", "manual"}
 
@@ -288,69 +289,3 @@ def status(project, refresh_first=True):
             "plan_current": not stale, "stale_action_ids": sorted(stale),
             "complete": not stale and (standalone_complete or (bool(rows) and all(r["status"] == "complete" and not r.get("needs_selection") for r in rows))),
             "asset_count": len(state["assets"]), "selection": state["selection"], "renders": state["renders"]}
-
-
-def usage(project):
-    """Generation volume per route from recorded attempts, for checking spend against the channel's billing.
-
-    Counts every attempt (failed and unknown ones may still be billed by the service), the media actually
-    returned, and how much of it appears in at least one composed render. No prices: billing differs per
-    gateway and account.
-    """
-    from .io import read_json
-    state = project.state
-    used = set()
-    def collect(value):
-        if isinstance(value, dict):
-            if isinstance(value.get("asset_id"), str):
-                used.add(value["asset_id"])
-            for item in value.values():
-                collect(item)
-        elif isinstance(value, list):
-            for item in value:
-                collect(item)
-    for render_id in state.get("renders", {}):
-        inputs = project.root / "renders" / render_id / "inputs.json"
-        if inputs.is_file():
-            try:
-                collect(read_json(inputs).get("manifest", {}))
-            except Exception:
-                pass
-    routes = {}
-    for attempt_id, attempt in state.get("attempts", {}).items():
-        if attempt.get("kind") not in ("image", "video"):
-            continue
-        route_id, model = "unknown", None
-        snapshot_path = attempt.get("route_path") or f"work/{attempt.get('id', attempt_id)}/route.json"
-        try:
-            snapshot = read_json(project.path(snapshot_path))
-            route_id, model = snapshot.get("id", route_id), snapshot.get("model")
-        except Exception:
-            pass
-        row = routes.setdefault(route_id, {"route": route_id, "model": model, "kind": attempt["kind"],
-                                           "attempts": 0, "by_status": {}, "outputs": 0, "used_in_renders": 0,
-                                           "video_seconds": 0.0, "used_video_seconds": 0.0, "sizes": {}})
-        row["attempts"] += 1
-        status_name = attempt.get("status", "unknown")
-        row["by_status"][status_name] = row["by_status"].get(status_name, 0) + 1
-        for asset_id in attempt.get("outputs", []) or []:
-            asset = state["assets"].get(asset_id, {})
-            if asset.get("kind") != attempt["kind"]:
-                continue
-            meta = asset.get("metadata", {})
-            row["outputs"] += 1
-            size = f"{meta.get('width')}x{meta.get('height')}"
-            row["sizes"][size] = row["sizes"].get(size, 0) + 1
-            seconds = float(meta.get("duration_seconds") or 0) if attempt["kind"] == "video" else 0.0
-            row["video_seconds"] += seconds
-            if asset_id in used:
-                row["used_in_renders"] += 1
-                row["used_video_seconds"] += seconds
-    for row in routes.values():
-        if row["kind"] == "video":
-            row["video_seconds"] = round(row["video_seconds"], 2)
-            row["used_video_seconds"] = round(row["used_video_seconds"], 2)
-        else:
-            row.pop("video_seconds"); row.pop("used_video_seconds")
-    return {"routes": sorted(routes.values(), key=lambda r: r["route"]),
-            "note": "Volumes only; convert with the channel's own billing and check account usage. Failed or unknown attempts may still be billed. used_in_renders only sees assets referenced by composition manifests; media copied into animation pages or edited and re-imported are not counted."}

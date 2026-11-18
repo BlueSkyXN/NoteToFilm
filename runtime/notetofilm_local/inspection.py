@@ -18,6 +18,22 @@ def _intervals(starts, ends, duration):
     return result
 
 
+def _add_overlap(pauses, intervals, field):
+    index = 0
+    for pause in pauses:
+        total = 0.0
+        while index < len(intervals):
+            span = intervals[index]
+            if span['start_seconds'] >= pause['end_seconds']:
+                break
+            total += max(0.0, min(pause['end_seconds'], span['end_seconds'])
+                         - max(pause['start_seconds'], span['start_seconds']))
+            if span['end_seconds'] > pause['end_seconds']:
+                break
+            index += 1
+        pause[field] = round(total, 3)
+
+
 def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline=None):
     """Report frozen, black and silent intervals as places worth looking at; never a pass/fail verdict."""
     if info['kind'] != 'video' or not info.get('duration_seconds'):
@@ -27,28 +43,31 @@ def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline
     duration = info['duration_seconds']
     args = ['ffmpeg', '-hide_banner', '-nostdin', '-i', str(source),
             '-vf', f'freezedetect=n=-60dB:d={freeze_seconds:g},blackdetect=d=0.2:pix_th=0.10']
-    args += ['-af', f'silencedetect=n=-35dB:d={silence_seconds:g}'] if info.get('has_audio') else ['-an']
+    args += ['-map', f"0:{info.get('video_stream_index', 'V:0')}"]
+    if info.get('has_audio'):
+        # Map each decoded channel sample to 0 (exact zero) or 1 before measuring zero runs.
+        args += ['-map', f"0:{info.get('audio_stream_index', 'a:0')}", '-af',
+                 f'aformat=sample_fmts=dbl,silencedetect@pause=n=-35dB:d={silence_seconds:g},'
+                 r'silencedetect@near=n=-70dB:d=0.2,aeval=not(eq(val(ch)\,0)):c=same,'
+                 'silencedetect@zero=n=0.5:d=0.001']
+    else:
+        args += ['-an']
     log = run_media_command(args + ['-f', 'null', '-'], timeout=900).stderr
-    number = r'(-?[0-9]+(?:\.[0-9]+)?)'
+    number = r'(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)'
+    def audio_intervals(name):
+        prefix = rf'\[silencedetect@{name} @ [^\]]+\] silence_'
+        return _intervals([float(v) for v in re.findall(prefix + 'start: ' + number, log)],
+                          [float(v) for v in re.findall(prefix + 'end: ' + number, log)], duration)
     found = {
         'freeze': _intervals([float(v) for v in re.findall(r'freeze_start: ' + number, log)],
                              [float(v) for v in re.findall(r'freeze_end: ' + number, log)], duration),
         'black': [{'start_seconds': round(float(a), 3), 'end_seconds': round(float(b), 3)}
                   for a, b in re.findall(r'black_start:' + number + r' black_end:' + number, log)],
-        'silence': _intervals([float(v) for v in re.findall(r'silence_start: ' + number, log)],
-                              [float(v) for v in re.findall(r'silence_end: ' + number, log)], duration)
-        if info.get('has_audio') else None,
+        'silence': audio_intervals('pause') if info.get('has_audio') else None,
     }
     if found['silence']:
-        # A second, audio-only pass separates digital silence (dropped sound) from quiet room tone.
-        quiet = run_media_command(['ffmpeg', '-hide_banner', '-nostdin', '-i', str(source), '-vn',
-                                   '-af', 'silencedetect=n=-70dB:d=0.2', '-f', 'null', '-'], timeout=900).stderr
-        digital = _intervals([float(v) for v in re.findall(r'silence_start: ' + number, quiet)],
-                             [float(v) for v in re.findall(r'silence_end: ' + number, quiet)], duration)
-        for item in found['silence']:
-            overlap = sum(max(0.0, min(item['end_seconds'], d['end_seconds']) - max(item['start_seconds'], d['start_seconds']))
-                          for d in digital)
-            item['digital_silence_seconds'] = round(overlap, 3)
+        _add_overlap(found['silence'], audio_intervals('near'), 'near_silence_seconds')
+        _add_overlap(found['silence'], audio_intervals('zero'), 'digital_silence_seconds')
     if timeline:
         from .io import read_json
         from .preview import _timeline
@@ -60,7 +79,9 @@ def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline
     found['thresholds'] = {'freeze_seconds': freeze_seconds, 'black_seconds': .2,
                            'silence_seconds': silence_seconds if info.get('has_audio') else None,
                            'silence_db': -35 if info.get('has_audio') else None,
-                           'digital_silence_db': -70 if info.get('has_audio') else None}
+                           'near_silence_db': -70 if info.get('has_audio') else None,
+                           'near_silence_min_seconds': .2 if info.get('has_audio') else None,
+                           'digital_silence_min_seconds': .001 if info.get('has_audio') else None}
     return found
 
 

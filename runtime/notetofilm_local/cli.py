@@ -75,7 +75,7 @@ def parser():
         command = commands.add_parser(name, help="Inspect project state and current input dependencies")
         command.add_argument("project")
         if name == "status":
-            command.add_argument("--usage", action="store_true", help="Add generation volume per route: attempts, returned media, video seconds and adoption")
+            command.add_argument("--usage", action="store_true", help="按路由、模型和媒体类型查看提交状态、登记素材和成片直接引用量")
     run = commands.add_parser("run", help="Execute ready work or resume recorded tasks")
     run.add_argument("project")
     run.add_argument("--action")
@@ -193,7 +193,7 @@ def parser():
     compare = commands.add_parser('compare', help='把多个图片或视频的画面并排、叠合或局部放大，用于挑候选、比方向、核对剪点和查小字')
     compare.add_argument('inputs', nargs='+', help='图片或视频；视频可写 FILE@秒数 只取这一帧')
     compare.add_argument('--output', required=True)
-    compare.add_argument('--at', type=float, action='append', help='视频取帧时刻，可重复；每个视频一行')
+    compare.add_argument('--at', type=float, action='append', help='视频内的显示时刻，可重复；每个视频一行，图上标注实际帧时间')
     compare.add_argument('--overlay', action='store_true', help='把各输入的一帧等权叠合，核对位置是否对齐')
     compare.add_argument('--crop', help='x,y,宽,高（0–1 比例），所有画面裁同一区域放大')
     compare.add_argument('--label', action='append', help='每个输入的标签，按顺序；中文标签需同时给 --font-file')

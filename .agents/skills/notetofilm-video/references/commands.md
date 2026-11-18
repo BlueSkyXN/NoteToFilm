@@ -79,12 +79,14 @@ PROJECT 与文件参数都传具体路径。动作 ID 从计划或 `ready` 结�
 
 `sheet` 把视频按时间抽帧排成 JPEG 网格，每格标注该帧的实际源时间；给出 `--timeline` 时同时标注镜头 ID，`sheet.json` 列出每帧对应的字幕。`--cuts` 只取每个剪点或转场前后 `--cut-padding` 秒，`--start/--end` 复看指定时段；单次最多约 600 帧，超出时降低 `--fps` 或缩小时段。输出目录须为空，以保留之前的查看记录。需要 render 依赖中的 Pillow。
 
-`web-render` 打开项目内提供 `window.render(t)` 的页面，按项目画幅和帧率逐帧截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）；时长默认读页面的 `window.DUR`。页面脚本里写了 `READY = …` 时，等到 `window.READY === true` 才开始截图；没有写时，`render` 出现即开始。`--preview-time` 可重复，只输出静帧，并按另一种渲染顺序比对画面是否只由时间决定；加 `--text-check` 时报告文字出界、重叠和过小并输出标注图。渲染可加 `--dpr`（超采样，1–3）、`--subframes`（子帧运动模糊，1–8，`--shutter` 调快门比例）和 `--grain`（编码时叠加颗粒，0–40）。页面目录内容与参数不变时复用已有素材，`--force` 另生成新版本。需要 Playwright（web 可选依赖）和 Chromium 或本机 Chrome；页面写法在 compose Skill 的代码动画说明。
+`web-render` 打开项目内提供 `window.render(t)` 的页面，按项目画幅和帧率逐帧截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）；时长默认读页面的 `window.DUR`。需要异步加载的入口应先同步设置 `window.READY = false`，再提供 `window.render`，资源就绪后设置为 `true`。入口未声明 READY 时，提供 render 即可截图。`--preview-time` 可重复，只输出静帧，并按另一种渲染顺序比对画面是否只由时间决定；加 `--text-check` 时报告文字出界、重叠和过小并输出标注图。渲染可加 `--dpr`（超采样，1–3）、`--subframes`（子帧运动模糊，1–8，`--shutter` 调快门比例）和 `--grain`（编码时叠加颗粒，0–40）。页面目录内容与参数不变时复用已有素材，`--force` 另生成新版本。需要 Playwright（web 可选依赖）和 Chromium 或本机 Chrome；页面写法在 compose Skill 的代码动画说明。
 
-`inspect --scan` 报告冻结（默认持续 1 秒以上，`--freeze-seconds`）、黑场和静音（低于 -35 dB，默认 0.5 秒以上，`--silence-seconds`）区间，带 `--timeline` 时标注所在镜头。每个静音区间带 `digital_silence_seconds`：其中低于 -70 dB 的秒数，大于 0 说明声音在那里断成了数字静音，等于 0 通常是铺了底噪的正常停顿。结果是查看提示，不影响 verification；静态画面和有意停留同样会出现在冻结中。
+`inspect --scan` 报告冻结（默认至少 1 秒，可用 `--freeze-seconds` 调整）、黑场和低电平停顿（低于 −35 dBFS，默认至少 0.5 秒，可用 `--silence-seconds` 调整）。加 `--timeline` 可定位镜头。每段停顿的 `near_silence_seconds` 累计连续至少 0.2 秒低于 −70 dBFS 的时间，`digital_silence_seconds` 累计解码后所有声道连续至少 1 毫秒样本为零的时间。按区间复听，结合设计判断停顿是否自然。
 
-`compare` 把图片和视频画面排成一张 `compare.jpg`，同时写 `compare.json`：视频按 `--at` 每个时刻一格、每个视频一行；`FILE@秒数` 只取这一帧；全部是单帧时按 `--columns` 排成宫格。`--overlay` 把各输入的一帧等权叠合，用来核对剪点两侧对象是否对齐；`--crop x,y,宽,高`（0–1 比例）对每个画面裁同一区域再放大，用来查伪文字和细节。标签默认是序号加文件名，中文标签需要 `--font-file`。输出目录须为空。
+`compare` 输出 `compare.jpg` 和 `compare.json`。视频按 `--at` 取该时刻正在显示的帧，每行一个视频。`FILE@秒数` 指定单帧，时刻从首个显示帧起算，必须小于片长。图上标注实际帧时间。JSON 的 `times` 保留请求时刻，`frame_times` 给出对应帧的显示起点。全部是单帧时按 `--columns` 排成宫格。`--overlay` 等权叠合，各输入按原比例居中对齐到首个画面的格子。`--crop x,y,宽,高` 按 0–1 比例裁出同一区域，每个输入的裁区宽高至少为一个像素。中文标签用 `--font-file` 指定字体。输出目录须为空。
 
-`status --usage` 按通道汇总图片和视频的请求数、各状态次数、返回的媒体数与视频秒数、分辨率，以及被成片清单引用的数量。失败或结果不明的请求也可能计费；金额按该通道自己的计费方式折算，再与账号用量核对。复制进动画页面或在外部加工后重新导入的素材，不计入“被成片引用”。
+`status --usage` 按路由、模型和媒体类型汇总。`attempts` 和 `by_status` 统计本地尝试。`submissions` 分列已受理（`accepted`）、已拒绝（`rejected`）、未发送（`not_sent`）和结果未知（`unknown`）。`outputs` 统计已经登记的同类素材，包括后续选片失败时已取得的素材。
+
+`used_in_renders` 是各版已编码成片直接引用的不同素材数，支持素材 ID、采用位，以及与登记路径和 SHA-256 都吻合的文件引用。`video_seconds` 与 `used_video_seconds` 分别累计全部生成源片和其中被引用源片的完整时长。某一版实际截取的源片秒数见该版 `timeline.json` 中的 `source_used_seconds`。复制进动画页面或加工后重新导入的素材单独登记。`missing_render_inputs` 列出缺少可读输入清单的成片，其引用量待核。费用按通道账单核对。
 
 `install-info --require-audio --require-render --font-file FONT`可检查实际入口的依赖与字体可读性，失败同样返回非零退出码。字体内容、画面语义和叙事效果仍需审阅。

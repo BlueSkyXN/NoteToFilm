@@ -68,6 +68,10 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(conflict.exception.code, "parameter_conflict")
         with self.assertRaises(NTFError):
             request_parameters({"parameters": {"duration_seconds": 5}, "duration_seconds": 6}, {})
+        for conflicting in ({"n": 4, "count": 1}, {"count": 1, "n": 4}):
+            with self.subTest(defaults=conflicting), self.assertRaises(NTFError) as error:
+                request_parameters({}, conflicting)
+            self.assertEqual(error.exception.code, "parameter_conflict")
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
