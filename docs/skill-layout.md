@@ -92,7 +92,7 @@ NoteToFilm/
 - 入口 `SKILL.md`：触发范围、关键决定和需要时读取的资料；纯设计时不提前加载接口与 CLI 全表。
 - `direct/references/routes/`：不同画面来源与控制方式的制作方法。叙事结构和视觉语言由相应公共设计资料维护。
 - 媒体技能 `references/providers/`：已有独立篇幅的供应商协议、能力边界与验证范围。新增模型先判断能否沿用现有协议说明。
-- 技能 `assets/`：实际要复制到制作备稿或产物中的模板。音画表和风格配方是可选备稿，正式旁白仍以主分镜为准。
+- 技能 `assets/`：实际要复制到制作备稿或产物中的模板。音画表和风格配方是可选备稿，正式旁白仍以主分镜为准。导演的 `assets/shot-studies/` 放[因果草图](../.agents/skills/notetofilm-direct/references/shot-studies.md)的动图和可改写的 Pillow 制作源。
 - `runtime/`：NoteToFilm CLI 的源码，可重复的制作能力通过 `ntf` 参数调用。技能说明引用命令；实现和行为测试在 CLI 中统一维护。
 - `shared/`：共同运行说明；业务材料、媒体、私有配置和本机路径留在源码外。
 
