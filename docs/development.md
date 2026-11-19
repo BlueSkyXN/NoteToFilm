@@ -98,6 +98,6 @@ cp -R .agents/skills/notetofilm-compose/assets/code-animation "$W/proj/animation
 3. 在 `CHANGELOG.md` 把"未发布"改成发布日期。
 4. 运行严格回归。
 5. 构建可执行程序并确认版本：`.venv/bin/python scripts/build_binary.py`，再执行 `dist/ntf --version`。
-6. 生成源码包，输出到仓库外：`.venv/bin/python scripts/package.py --output /path/outside/repo/notetofilm-local-<版本>.zip`。
+6. 发布附件按 CLI 标签存放在 `dist/cli-v<版本>/`。用 `.venv/bin/python scripts/package.py --output "dist/cli-v<版本>/notetofilm-local-<版本>.zip"` 生成源码 ZIP。将扩展名换成 `.tar.gz` 可生成另一种源码包。将本版的 wheel 和 `SHA256SUMS` 放在同一目录。
 7. 开 PR，等 `cli-regression` 通过后合并。
 8. 打标签。仓库已有的 `v0.2.0`、`v0.3.0` 是 Web 版本，CLI 版本使用 `cli-v<版本>`（如 `cli-v0.3.0`），避免重名。
