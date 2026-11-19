@@ -26,6 +26,7 @@ CLI 与 Web 分别编号，版本号遵循语义化版本。
 
 ### 修复
 
+- 可执行版 `ntf score` 和 `ntf motion` 现可读取计算素材指纹所需的实现文件，并与源码版复用同一项目中已生成的素材。
 - 生成请求的 `output`（如 `count`）可以覆盖路由默认值；`parameters`、`output` 与顶层 `duration_seconds` 之间给出不同值时仍报 `parameter_conflict`。路由默认值内部的别名冲突同样会在发送前报错。
 - 修复 FFmpeg 6 下 `ntf inspect --scan` 漏报音频停顿的问题。
 

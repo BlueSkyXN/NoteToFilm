@@ -21,6 +21,8 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 OPTIONAL = {'edge_tts': 'audio', 'PIL': 'render', 'yaml': 'yaml'}
 NAME = 'ntf'
+# 配乐和动效读取这些实现文件的内容，判断已有素材能否复用。
+FINGERPRINT_SOURCES = ('synth.py', 'motion.py', 'motion_render.py')
 
 
 def build(dist):
@@ -28,12 +30,15 @@ def build(dist):
         raise SystemExit("当前 Python 没有 PyInstaller；在含运行依赖的环境执行 pip install -e '.[audio,render,build]'。")
     included = {extra: importlib.util.find_spec(module) is not None for module, extra in OPTIONAL.items()}
     work = ROOT / 'build/pyinstaller'
+    source_package = ROOT / 'runtime/notetofilm_local'
     command = [sys.executable, '-m', 'PyInstaller', '--onedir', '--noconfirm', '--clean', '--log-level', 'WARN',
                '--name', NAME, '--distpath', str(work / 'dist'), '--workpath', str(work), '--specpath', str(work),
                '--paths', str(ROOT / 'runtime'),
                '--collect-submodules', 'notetofilm_local',
-               '--add-data', os.pathsep.join([str(ROOT / 'runtime/notetofilm_local/data'), 'notetofilm_local/data']),
+               '--add-data', os.pathsep.join([str(source_package / 'data'), 'notetofilm_local/data']),
                '--exclude-module', 'playwright', '--exclude-module', 'tkinter']
+    for filename in FINGERPRINT_SOURCES:
+        command += ['--add-data', os.pathsep.join([str(source_package / filename), 'notetofilm_local'])]
     if included['audio']:
         command += ['--collect-submodules', 'edge_tts']
     command.append(str(ROOT / 'scripts/ntf.py'))
@@ -52,6 +57,10 @@ def build(dist):
         entry = link
     version = subprocess.run([str(entry), '--version'], capture_output=True, text=True, check=True, timeout=120).stdout.strip()
     info = json.loads(subprocess.run([str(entry), 'install-info'], capture_output=True, text=True, check=True, timeout=120).stdout)
+    for filename in FINGERPRINT_SOURCES:
+        bundled = Path(info['package']) / filename
+        if not bundled.is_file() or bundled.read_bytes() != (source_package / filename).read_bytes():
+            raise SystemExit(f'请检查 PyInstaller 的 --add-data 配置，产物中需要包含与源码一致的 {filename}。')
     size = sum(path.stat().st_size for path in runtime.rglob('*') if path.is_file())
     return {'command': str(entry), 'runtime_dir': str(runtime), 'size_bytes': size, 'version': version,
             'included_extras': included, 'ffmpeg': info.get('ffmpeg'), 'edge_tts': info.get('edge_tts'),
