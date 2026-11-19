@@ -35,7 +35,7 @@ python3 scripts/build_binary.py
 dist/ntf --version
 ```
 
-`dist/ntf` 指向 `dist/ntf-runtime/ntf`，运行时不需要 Python；构建环境中已安装的 edge-tts、Pillow、PyYAML 一并打包，FFmpeg 仍使用本机安装。程序与依赖库以目录形式存放，移动时保留整个 `dist/`。首次启动时系统会检查其中的库文件，需要几秒，之后启动很快。网页动画渲染不随程序打包，使用源码入口或安装器环境并装上 `web` 可选依赖。
+`dist/ntf` 指向 `dist/ntf-runtime/ntf`，运行时不需要 Python。构建环境中已安装的 edge-tts、Pillow、PyYAML 一并打包，FFmpeg 仍使用本机安装。移动程序时，将 `ntf` 链接和整个 `ntf-runtime/` 放在同一目录。首次启动时系统会检查其中的库文件，需要几秒，之后启动很快。网页动画渲染不随程序打包，使用源码入口或安装器环境并装上 `web` 可选依赖。
 
 ## 先合成一条离线样片
 
@@ -123,7 +123,8 @@ Agent 维护材料与正式分镜；运行代码执行计划并登记实际结�
 ```bash
 python3 -m pip install -e '.[audio,render,test]'
 python3 scripts/check_cli.py
-python3 scripts/package.py --output /path/outside/repository/notetofilm-local-<版本>.zip
+version=X.Y.Z  # 替换为待发布的 CLI 版本号
+python3 scripts/package.py --output "dist/cli-v${version}/notetofilm-local-${version}.zip"
 ```
 
 命令请用装好上述依赖的解释器执行；环境准备、回归不覆盖的部分与发版步骤见[开发与发版](docs/development.md)。严格入口要求测试数大于零、无失败且无跳过，包含真实本地媒体处理、协议与恢复测试，以及从源码包安装七个 Skill 和真实 CLI、移走源码后再合成与检查的验证。模型与 TTS 使用测试替身。

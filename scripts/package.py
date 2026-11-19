@@ -91,8 +91,8 @@ def check_components(root: Path) -> dict:
 
 def build(root: Path, output: Path) -> dict:
     root, output = root.resolve(), output.resolve()
-    if output == root or root in output.parents:
-        raise ValueError("Write the archive outside the plugin source directory")
+    if output.is_relative_to(root) and not output.is_relative_to(root / "dist"):
+        raise ValueError("Write the archive under dist/ or outside the plugin source directory")
     manifest = check_components(root)
     files = included_files(root)
     output.parent.mkdir(parents=True, exist_ok=True)

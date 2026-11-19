@@ -45,7 +45,7 @@ NoteToFilm 让 Agent 把故事或业务材料做成可以继续修改的视频�
 | `python3 -m pip install -e '.[audio,render,test]'` | 开发环境 | 需要网络安装依赖 |
 | `python3 scripts/check_cli.py` | 严格回归：测试数大于零、无失败、无跳过，含 shared 同步检查与分发安装 | 需要 FFmpeg、ffprobe（含 libx264、libmp3lame、aac、png 编码器）；模型与 TTS 使用替身，不联网 |
 | `python3 scripts/sync_skill_references.py --write` / `--check` | 把 `shared/` 同步到七个 Skill 的 `references/` / 只检查 | 无 |
-| `python3 scripts/package.py --output /path/outside/repo/notetofilm-local-<版本>.zip` | 生成源码分发包 | 输出放仓库外 |
+| `python3 scripts/package.py --output "dist/cli-v<版本>/notetofilm-local-<版本>.zip"` | 生成源码分发包 | 发布附件按 CLI 标签存放，也支持输出到仓库外 |
 | `python3 scripts/build_binary.py` | 构建 `dist/ntf`（指向 `dist/ntf-runtime/ntf`） | 需要 `.[audio,render,build]`；产物与本机平台对应 |
 | `python3 examples/create_media_fixture.py --output /new/dir --render` | 离线样片 | 需要 FFmpeg |
 | `ntf web-render PROJECT --page DIR --scene ID` | 网页动画逐帧渲染 | 需要 `.[web]`（Playwright）及 Chromium 或 Google Chrome |

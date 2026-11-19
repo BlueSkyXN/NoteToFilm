@@ -197,6 +197,20 @@ class SkillsInstallationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "outside"):
             package.build(source, source / "bad.zip")
 
+    def test_versioned_dist_archives_match_external_outputs(self):
+        source = fixture_source(self.tmp_path)
+        package = load_script("package")
+        release = source / "dist" / "cli-v1.2.3"
+        for extension in ("zip", "tar.gz"):
+            with self.subTest(extension=extension):
+                name = f"notetofilm-local-1.2.3.{extension}"
+                external = self.tmp_path / name
+                archive = release / name
+                package.build(source, external)
+                package.build(source, archive)
+                self.assertEqual(archive.read_bytes(), external.read_bytes())
+                self.assertNotIn(archive, package.included_files(source))
+
     def test_real_package_documents_link_only_to_packaged_files(self):
         output = self.tmp_path / "real.zip"
         assert load_script("package").build(ROOT, output)["status"] == "packaged"
