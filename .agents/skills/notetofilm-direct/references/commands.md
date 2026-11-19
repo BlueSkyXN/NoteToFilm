@@ -59,7 +59,7 @@ PROJECT 与文件参数都传具体路径。动作 ID 从计划或 `ready` 结�
 
 `routes`、`generate`、`run`接受`--config ROUTES`。ROUTES保存模型、协议、能力和认证环境变量名，不含地址和密钥。地址和密钥依次来自环境变量、NoteToFilm 根目录 `.env`，以及连接声明 `codex_provider` 时即时读取的 Codex 配置；`routes` 显示每条路由的来源。需要临时使用另一份私有连接时加 `--connections-file PRIVATE`，它只提供匹配connection ID的base_url及credentials.api_key，仅在当前操作内绑定，不复制私有文件、不导出密钥，也不覆盖模型与协议路径。
 
-`settings`不带修改参数时读取项目默认值。声音可控voice/rate/volume/pitch，画幅可控width/height/fps，文字可控subtitles（sidecar、burn、embed、none）/subtitle-renderer/font-file/font-index（TTC/OTC 合集中的字形序号，默认 0）/font-size，音轨可控audio-tracks（single或dual），路由可控image-route/video-route。修改后重新plan；字体和配字时点仍在合成清单中明确。
+`settings`不带修改参数时读取项目默认值。声音可控voice/rate/volume/pitch，画幅可控width/height/fps，文字可控subtitles（sidecar、burn、embed、none）/subtitle-renderer/font-file/font-index（TTC/OTC 合集中的字形序号，默认 0）/font-size（ASS 单位，按画幅高度换算，720p 下 13 约 33 像素），音轨可控audio-tracks（single或dual），路由可控image-route/video-route。修改后重新plan；字体和配字时点仍在合成清单中明确。
 
 `timing --mode estimate`只报告估时，不伪造字幕；默认按约每秒 4.6 个发音单位（中文字、数字各算一个，英文词算两个）并随项目或镜头的 `rate` 换算，`--units-per-second` 可指定固定语速；`timing --apply`要求已有真实音频，以lead/tail、最小/最大片长和preserve-planned选项计算窗口，并更新未采用现有画面的video_parameters.duration_seconds。超限时拒绝整次写入，返回待拆镜项；之后重新plan。
 
