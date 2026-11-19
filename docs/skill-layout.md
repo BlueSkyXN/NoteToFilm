@@ -59,7 +59,7 @@ NoteToFilm/
 │   ├── notetofilm-audio/
 │   │   └── references/voice-and-subtitles.md
 │   └── notetofilm-compose/
-│       ├── assets/code-animation/  # 代码动画骨架：index.html、timing.js、motion.js
+│       ├── assets/code-animation/  # 代码动画骨架：index.html、timing.js、motion.js、kit.js
 │       └── references/{timeline,manifest,motion,code-animation,code-recipes,motion-craft,toolbox,sound-mix,delivery}.md
 ├── shared/                       # 运行说明的维护源
 │   ├── runtime.md

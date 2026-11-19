@@ -17,40 +17,35 @@
 window.READY = false;
 // 示例：同位对照——固定基准与尺度，让差异成为唯一变化。替换内容、数值和样式，保留 render(t) 的写法。
 import { DUR, BEATS } from './timing.js';
-import { seg, ease, glide, lerp, renderInfo, setupCanvas, drawPath, reveal, wrapText, drawLines, countUp, loadFonts } from './motion.js';
+import { seg, ease, glide, lerp, drawPath, reveal, wrapText, drawLines, countUp, loadFonts } from './motion.js';
+import { ctx, DW, base, faded, text, font } from './kit.js';
 
 // 数值与文字来自材料，注明事实编号；没有依据的数字不要放进画面。
 const DATA = { title: '同一基准下比较', a: { label: '标准', value: 100 }, b: { label: '实际', value: 82 }, unit: '%', source: 'F01' };
 
-const { W, H } = renderInfo();
-const ctx = setupCanvas(document.getElementById('c'), W, H);
-const U = Math.min(W, H) / 720;                       // 版面单位：按 720 短边设计，其他画幅等比缩放
+// 以下坐标都是设计像素（短边 720，见 kit.js），不用乘缩放系数。
 const C = { paper: '#F2F0EA', ink: '#1E2328', muted: '#8A9096', a: '#3C6E91', b: '#C0533A' };
-const FONT = (size, weight = 500) => `${weight} ${size * U}px "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif`;
-const left = 160 * U, right = W - 160 * U, scaleMax = 120;
+const left = 160, right = DW - 160, scaleMax = 120;
 const x = v => lerp(left, right, v / scaleMax);
 
 window.DUR = DUR;
 window.render = t => {
-  ctx.fillStyle = C.paper; ctx.fillRect(0, 0, W, H);
+  base(C.paper);
 
   // 讲解对象：先认出在比较什么
-  ctx.globalAlpha = ease.outCubic(seg(t, BEATS.title, BEATS.title + 0.4));
-  ctx.fillStyle = C.ink; ctx.font = FONT(40, 700);
-  drawLines(ctx, wrapText(ctx, DATA.title, right - left), left, 120 * U);
-  ctx.globalAlpha = 1;
+  faded(ease.outCubic(seg(t, BEATS.title, BEATS.title + 0.4)), () => {
+    ctx.fillStyle = C.ink; ctx.font = font(40, 700);
+    drawLines(ctx, wrapText(ctx, DATA.title, right - left), left, 120);
+  });
 
   // 共同基准：刻度线沿路径画出
-  drawPath(ctx, [[left, 470 * U], [right, 470 * U]], glide(seg(t, BEATS.baseline, BEATS.baseline + 0.7)), { width: 2 * U, color: C.muted });
+  drawPath(ctx, [[left, 470], [right, 470]], glide(seg(t, BEATS.baseline, BEATS.baseline + 0.7)), { width: 2, color: C.muted });
 
   // A、B 在同一尺度上依次显露
-  const bar = (row, item, color, at) => {
-    const y = row * U, k = ease.inOutCubic(seg(t, at, at + 0.8));
-    reveal(ctx, [left, y, x(item.value) - left, 70 * U], k, () => { ctx.fillStyle = color; ctx.fillRect(left, y, x(item.value) - left, 70 * U); });
-    ctx.globalAlpha = seg(t, at + 0.5, at + 0.9);
-    ctx.fillStyle = C.ink; ctx.font = FONT(26);
-    ctx.fillText(`${item.label}  ${countUp(0, item.value, k)}${DATA.unit}`, left, y - 14 * U);
-    ctx.globalAlpha = 1;
+  const bar = (y, item, color, at) => {
+    const k = ease.inOutCubic(seg(t, at, at + 0.8));
+    reveal(ctx, [left, y, x(item.value) - left, 70], k, () => { ctx.fillStyle = color; ctx.fillRect(left, y, x(item.value) - left, 70); });
+    text(`${item.label}  ${countUp(0, item.value, k)}${DATA.unit}`, left, y - 14, 26, { color: C.ink, alpha: seg(t, at + 0.5, at + 0.9) });
   };
   bar(250, DATA.a, C.a, BEATS.first);
   bar(380, DATA.b, C.b, BEATS.second);
@@ -58,21 +53,18 @@ window.render = t => {
   // 差异：沿 A 的终点对齐，只标出 B 缺少的那一段
   const g = seg(t, BEATS.gap, BEATS.gap + 0.6);
   if (g > 0) {
-    const y = 380 * U, h = 70 * U, x0 = x(DATA.b.value), x1 = x(DATA.a.value);
-    ctx.save(); ctx.setLineDash([6 * U, 6 * U]);
-    drawPath(ctx, [[x1, 250 * U], [x1, 470 * U]], glide(g), { width: 2 * U, color: C.muted });
+    const y = 380, h = 70, x0 = x(DATA.b.value), x1 = x(DATA.a.value);
+    ctx.save(); ctx.setLineDash([6, 6]);
+    drawPath(ctx, [[x1, 250], [x1, 470]], glide(g), { width: 2, color: C.muted });
     reveal(ctx, [x0, y, x1 - x0, h], glide(g), () => {
-      ctx.strokeStyle = C.b; ctx.lineWidth = 3 * U; ctx.strokeRect(x0 + 1.5 * U, y + 1.5 * U, x1 - x0 - 3 * U, h - 3 * U);
+      ctx.strokeStyle = C.b; ctx.lineWidth = 3; ctx.strokeRect(x0 + 1.5, y + 1.5, x1 - x0 - 3, h - 3);
     });
     ctx.restore();
-    ctx.globalAlpha = seg(t, BEATS.gap + 0.4, BEATS.gap + 0.8);
-    ctx.fillStyle = C.b; ctx.font = FONT(28, 700);
-    ctx.fillText(`相差 ${DATA.a.value - DATA.b.value}${DATA.unit}`, x1 + 18 * U, y + h / 2 + 10 * U);
-    ctx.globalAlpha = 1;
+    text(`相差 ${DATA.a.value - DATA.b.value}${DATA.unit}`, x1 + 18, y + h / 2 + 10, 28, { weight: 700, color: C.b, alpha: seg(t, BEATS.gap + 0.4, BEATS.gap + 0.8) });
   }
 };
 
-await loadFonts([FONT(40, 700), FONT(26), FONT(28, 700)]);
+await loadFonts([font(40, 700), font(26), font(28, 700)]);
 window.render(0);
 window.READY = true;
 </script>

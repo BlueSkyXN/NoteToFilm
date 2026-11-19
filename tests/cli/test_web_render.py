@@ -131,6 +131,14 @@ class WebRenderEntryTests(unittest.TestCase):
                      'export function renderInfo', 'export const countUp'):
             self.assertIn(name, helpers)
         self.assertNotIn('Math.random()', helpers.replace('no Math.random()', '').replace('没有状态、计时器或 Math.random()', ''))
+        kit = (STARTER / 'kit.js').read_text(encoding='utf-8')
+        self.assertIn("from './kit.js'", page)
+        for name in ('export function base', 'export function faded', 'export function text', 'export function wipeText', 'export function box'):
+            self.assertIn(name, kit)
+        # 只有 base() 把透明度重置为 1，其余绘制都与外层透明度相乘，整组淡出才不会被内层覆盖
+        self.assertEqual(kit.count('globalAlpha = '), 1)
+        self.assertIn('globalAlpha *=', kit)
+        self.assertNotIn('Math.random()', kit)
 
 
 if __name__ == '__main__':
