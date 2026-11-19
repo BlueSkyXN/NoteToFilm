@@ -1,6 +1,6 @@
 # 第三方参考与许可
 
-本项目在开发中参考了以下项目。下表列出的位置包含从这些项目复用或改编的代码和文本，**这些复用的代码和文本遵循原作者的许可协议**；其余内容由本项目编写，以 GPL-3.0-or-later 发布（见 `LICENSE`）。
+NoteToFilm 自有内容以 GPL-3.0-or-later 发布，见 [LICENSE](LICENSE)。随项目分发的第三方代码、文本及其改编保留原作者许可，下表列出对应文件。仅用于设计对照的来源列在“只参考思路”一节。
 
 ## garden-skills
 
@@ -28,10 +28,12 @@
 
 ## 只参考思路，未复用代码和文本
 
-| 项目 | 协议 | 参考的思路 |
+| 来源 | 上游协议 | 参考的思路及本项目的用法 |
 |---|---|---|
-| garden-skills 的 web-video-presentation、web-design-engineer 等技能 | MIT | 口播与画面分工、信息逐步揭示、设计工作方法 |
-| video-agent-kit（Z.ai） | MIT | 按时间抽帧的联系表与局部复看、冻结/黑场/静音检测、中文分词断行、配音回听 |
+| [OpenMotion · Motion.md 设计说明](https://github.com/nexu-io/openmotion/blob/19e492000238eaed6cc304156c5051e936369fc1/docs/motion-md.md) | Apache-2.0 | 把一段参考片看成一连串观看动作：观众先注意什么，什么时候发现变化，哪一声使结果落定。NoteToFilm 在[导演备稿](.agents/skills/notetofilm-direct/assets/design-brief.template.md)中用自己的材料重排这些时刻，再写入正式分镜。 |
+| [HyperFrames · 可按时间定位的动画](https://github.com/heygen-com/hyperframes/blob/765883195eb0a40c1062715879270e55f9074a67/README.md#how-it-works) | Apache-2.0 | 把镜头定位到同一时刻，就能复查一个动作的前后状态。NoteToFilm 的[因果草图](.agents/skills/notetofilm-direct/references/shot-studies.md)用项目自己的 Pillow 脚本逐帧绘制。实际制片沿用镜号、素材和合成时间表。 |
+| [garden-skills](https://github.com/ConardLi/garden-skills/tree/9578a34edf3c359da23d8a632b72790834961d11/skills) 的 web-video-presentation、web-design-engineer 等技能 | MIT | 口播与画面分工、信息逐步揭示、设计工作方法 |
+| Z.ai 的 ZCode 官方插件 `video-agent-kit` 0.4.3，见随包 README 的 `video_watch_segment`、`qc_preview` | MIT | 按时间抽帧的联系表与局部复看、冻结/黑场/静音检测、中文分词断行、配音回听。NoteToFilm 用 `ntf sheet` 定位剪点，用 `ntf inspect --scan` 找到停留，再由剪辑者判断是否需要收短。 |
 
 ## garden-skills 许可文本
 
