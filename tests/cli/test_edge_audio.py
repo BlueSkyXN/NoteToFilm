@@ -64,6 +64,27 @@ class EdgeAudioTests(unittest.TestCase):
         self.assertEqual(source, "service boundary text")
         self.assertEqual(_boundary_cues(events[:1], "清晨。纸船已经出发。"), incomplete)
 
+    def test_overlong_clause_breaks_at_last_mark_instead_of_mid_phrase(self):
+        from notetofilm_local.adapters.edge_tts import _subtitles_with_source
+        def cues_for(spoken, tokens):
+            events = [{"type": "WordBoundary", "offset": i * 3_000_000, "duration": 2_000_000, "text": token}
+                      for i, token in enumerate(tokens)]
+            return [c["text"] for c in _subtitles_with_source(events, spoken)[0]]
+        # The first comma comes too early to end a cue; the overflow goes back to the last enumeration mark.
+        self.assertEqual(
+            cues_for("做退款功能，先定谁能退、退多少、重复申请怎么算，再定逻辑放在哪个模块。",
+                     ["做", "退款", "功能", "先定", "谁", "能", "退", "退", "多少", "重复", "申请", "怎么", "算",
+                      "再定", "逻辑", "放在", "哪个", "模块"]),
+            ["做退款功能，先定谁能退、退多少、", "重复申请怎么算，", "再定逻辑放在哪个模块。"])
+        # Without clause marks, the space after a Latin name is the next best place.
+        self.assertEqual(
+            cues_for("Planner 也只在你把整件任务交给它的时候才会启动。",
+                     ["Planner", "也", "只", "在", "你", "把", "整件", "任务", "交给", "它", "的", "时候", "才", "会", "启动"]),
+            ["Planner", "也只在你把整件任务交给它的时候才会启动。"])
+        # No mark or space at all: the cue still closes before the word that would overflow it.
+        plain = "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥天地。"
+        self.assertEqual(cues_for(plain, list(plain[:-1])), [plain[:22], plain[22:]])
+
     def test_provider_error_does_not_expose_query_token(self):
         class Communicate:
             def __init__(self, *args, **kwargs):
