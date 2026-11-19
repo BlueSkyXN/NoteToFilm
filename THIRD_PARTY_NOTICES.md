@@ -4,7 +4,7 @@
 
 ## garden-skills
 
-- 来源：<https://github.com/ConardLi/garden-skills>，提交 `9578a34edf3c359da23d8a632b72790834961d11`，`skills/motion-showreel`
+- 来源：<https://github.com/ConardLi/garden-skills>，提交 `9578a34edf3c359da23d8a632b72790834961d11`，`skills/motion-showreel`；表中标注“2b9a893”的条目来自提交 `2b9a89340b70f632d31c0f1c69fce94a7912423e`
 - 协议：MIT License（原作者许可文本见本节末尾）
 
 | 本仓库位置 | 复用或改编的内容 |
@@ -21,6 +21,10 @@
 | `.agents/skills/notetofilm-direct/references/formats.md` 的“数据爆点”“片头、落版与金句” | references/formats.md 中 D、E、G 三类用途的结构与坑 |
 | `runtime/notetofilm_local/data/text_hook.js` | scripts/lib/text-hook.mjs 的页面内文字位置记录 |
 | `runtime/notetofilm_local/web_render.py` | `render(t)` 页面约定、浏览器启动参数、确定性比对、子帧平均、超采样与颗粒的做法（以 Python 与 FFmpeg 重写） |
+| `runtime/notetofilm_local/synth.py`（2b9a893） | scripts/lib/synth.mjs 的乐器配方、和弦与音阶表、session 接口（节奏、总线、侧链、共享混响）与 Freeverb 调音，以 Python 标准库与 FFmpeg 重写 |
+| `runtime/notetofilm_local/inspection.py` 的倍频程平衡、重拍前凹陷与有意停留（2b9a893） | scripts/audio.mjs check 的倍频程能量、drop 呼吸量与提示阈值，scripts/inspect.mjs 的 HOLDS 判定（前后放宽 0.35 秒），以 FFmpeg 测量重写 |
+| `.agents/skills/notetofilm-direct/references/styles/` 中的 minimal-ui、terminal-ascii、one-line、particle-field 四个风格文件（2b9a893） | 风格库对应文件的主体；声音一节改写为 `ntf score`，补充「在 NoteToFilm 中制作」与本项目实验中的做法 |
+| `.agents/skills/notetofilm-compose/references/sound-mix.md` 的“代码合成配乐”（2b9a893） | references/sound.md 第 1 档内置合成的接口说明、低频控制、侧链与混音建议、检查方法和声音默认味 |
 
 ## 只参考思路，未复用代码和文本
 

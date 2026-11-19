@@ -143,6 +143,13 @@ def parser():
     web.add_argument('--shutter', type=float, default=.5, help='子帧覆盖的快门比例 (0, 1]，默认 0.5')
     web.add_argument('--grain', type=float, default=0, help='编码时叠加的颗粒强度 0–40')
     web.add_argument('--text-check', action='store_true', help='预览时检查文字出界、重叠和过小')
+    score = commands.add_parser('score', help='运行配乐脚本，合成原创配乐与音效并登记为项目音频')
+    score.add_argument('project')
+    score.add_argument('--file', required=True, help='项目内的 .py 配乐脚本，定义 DUR 与 score(S)')
+    score.add_argument('--select', help='采用位置，默认 film.score')
+    score.add_argument('--duration', type=float, help='秒数；省略时读取脚本里的 DUR')
+    score.add_argument('--stems', action='store_true', help='另存每条总线的分轨，便于排查')
+    score.add_argument('--force', action='store_true', help='重新合成为新素材，保留已有版本')
     timing = commands.add_parser("timing", help="Report narration estimates or apply measured shot durations")
     timing.add_argument("project")
     timing.add_argument("--mode", choices=["estimate", "measured"], default="measured")
@@ -177,6 +184,11 @@ def parser():
     inspect.add_argument('--freeze-seconds', type=float, default=1.0)
     inspect.add_argument('--silence-seconds', type=float, default=.5)
     inspect.add_argument('--timeline', help='合成时间表；--scan 结果据此标注镜头 ID')
+    inspect.add_argument('--hold', action='append', dest='holds', metavar='START-END',
+                         help='有意停留的区间（秒），落在其中的冻结标为 intended；可重复，与 --scan 一起用')
+    inspect.add_argument('--drop', action='append', type=float, dest='drops', metavar='SECONDS',
+                         help='重拍时刻：量重拍前半拍的凹陷和重拍的抬升；可重复，与 --audio-check 一起用')
+    inspect.add_argument('--beat-seconds', type=float, default=.5, help='一拍的秒数，--drop 用它划窗口，默认 0.5')
     sheet = commands.add_parser('sheet', help='按时间抽帧生成带时间与镜头标注的联系表')
     sheet.add_argument('file')
     sheet.add_argument('--output', required=True)
@@ -273,7 +285,7 @@ def dispatch(args):
                              audio_check=args.audio_check, min_mean_dbfs=args.min_mean_dbfs, max_peak_dbfs=args.max_peak_dbfs,
                              expected_loudness_lufs=args.expect_loudness_lufs, loudness_tolerance=args.loudness_tolerance,
                              scan=args.scan, freeze_seconds=args.freeze_seconds, silence_seconds=args.silence_seconds,
-                             timeline=args.timeline)
+                             timeline=args.timeline, holds=args.holds, drops=args.drops, beat_seconds=args.beat_seconds)
     if args.command == 'compare':
         from .compare import compare_board
         return compare_board(args.inputs, output=args.output, at=args.at, overlay=args.overlay, crop=args.crop,
@@ -442,6 +454,9 @@ def dispatch(args):
                           preview_times=args.preview_times, force=args.force, dpr=args.dpr,
                           subframes=args.subframes, shutter=args.shutter, grain=args.grain,
                           text_check=args.text_check)
+    if args.command == 'score':
+        from .synth import score_project
+        return score_project(project, args.file, select=args.select, duration=args.duration, stems=args.stems, force=args.force)
     if args.command == "timing":
         from .timing import narration_timing
         return narration_timing(project, mode=args.mode, scene_ids=args.scene_ids,

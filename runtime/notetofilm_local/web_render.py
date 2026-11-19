@@ -59,7 +59,9 @@ def _difference(a, b):
 def analyze_text(boxes, width, height, *, min_size_ratio=.025, bleed_size_ratio=.08):
     """Classify text boxes: CUT (crossing the frame edge), BLEED (large display type crossing on purpose),
     OVERLAP (two different strings covering each other) and TINY (too small to read)."""
-    visible = [b for b in boxes if b.get('alpha', 1) >= .3 and b['x1'] > b['x0'] and b['y1'] > b['y0']]
+    # text that lies wholly outside the frame (a label the camera has already left) is not on screen at all
+    visible = [b for b in boxes if b.get('alpha', 1) >= .3 and b['x1'] > b['x0'] and b['y1'] > b['y0']
+               and b['x1'] > 0 and b['y1'] > 0 and b['x0'] < width and b['y0'] < height]
     issues = []
     for b in visible:
         outside = b['x0'] < -1 or b['y0'] < -1 or b['x1'] > width + 1 or b['y1'] > height + 1
@@ -273,6 +275,11 @@ def web_render(project, page, *, scene_id, duration=None, select=None, fps=None,
                 if text_check:
                     issues = analyze_text(boxes, settings['width'], settings['height'])
                     entry = {'time_seconds': t, 'text_boxes': len(boxes), 'issues': issues}
+                    if issues:
+                        counts = {}
+                        for issue in issues:
+                            counts[issue['type']] = counts.get(issue['type'], 0) + 1
+                        entry['counts'] = counts
                     if issues:
                         marked = _mark_issues(image, issues, dpr, job / f'text_{t:.3f}s.png')
                         if marked:

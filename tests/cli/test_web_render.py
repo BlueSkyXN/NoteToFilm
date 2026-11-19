@@ -82,6 +82,15 @@ class WebRenderEntryTests(unittest.TestCase):
         self.assertEqual(found, {('CUT', 'runs off'), ('BLEED', 'HUGE'), ('OVERLAP', ('label one', 'label two')),
                                  ('TINY', 'footnote')})
 
+    def test_text_wholly_outside_the_frame_is_not_reported(self):
+        box = lambda text, x0, x1: {'text': text, 'x0': x0, 'y0': 100, 'x1': x1, 'y1': 130, 'size': 30, 'alpha': 1}
+        issues = analyze_text([box('left behind', -400, -200), box('crossing', -50, 120), box('ahead', 1400, 1600)], 1280, 720)
+        self.assertEqual([(i['type'], i['text']) for i in issues], [('CUT', 'crossing')])
+
+    def test_text_hook_skips_decorative_text(self):
+        hook = TEXT_HOOK.read_text(encoding='utf-8')
+        self.assertIn('this.ntfDecorative', hook)
+
     def test_text_hook_ships_with_the_runtime(self):
         script = TEXT_HOOK.read_text(encoding='utf-8')
         self.assertIn('self.__ntfText', script)
@@ -133,7 +142,7 @@ class WebRenderEntryTests(unittest.TestCase):
         self.assertNotIn('Math.random()', helpers.replace('no Math.random()', '').replace('没有状态、计时器或 Math.random()', ''))
         kit = (STARTER / 'kit.js').read_text(encoding='utf-8')
         self.assertIn("from './kit.js'", page)
-        for name in ('export function base', 'export function faded', 'export function text', 'export function wipeText', 'export function box'):
+        for name in ('export function base', 'export function faded', 'export function text', 'export function wipeText', 'export function box', 'export function decorative'):
             self.assertIn(name, kit)
         # 只有 base() 把透明度重置为 1，其余绘制都与外层透明度相乘，整组淡出才不会被内层覆盖
         self.assertEqual(kit.count('globalAlpha = '), 1)

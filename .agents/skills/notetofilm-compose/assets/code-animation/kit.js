@@ -28,6 +28,13 @@ export function faded(a, draw) {
   ctx.save(); ctx.globalAlpha *= clamp(a); draw(); ctx.restore();
 }
 
+/** 装饰性文字（形变途中的乱码字符、拉远后当纹理用的小字）：在 draw 里画的字不进 --text-check。 */
+export function decorative(draw) {
+  const before = ctx.ntfDecorative;
+  ctx.ntfDecorative = true;
+  try { draw(); } finally { ctx.ntfDecorative = before; }
+}
+
 export function measure(s, size, weight = 500, family = 'sans') {
   ctx.save(); ctx.font = font(size, weight, family); const w = ctx.measureText(s).width; ctx.restore(); return w;
 }

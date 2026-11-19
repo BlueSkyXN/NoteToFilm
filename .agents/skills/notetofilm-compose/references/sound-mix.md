@@ -7,7 +7,7 @@
 1. 旁白：先确认在普通音量下清楚，`ntf inspect FILM --audio-check` 看响度和真峰值。
 2. 环境底声：让停顿处不掉成无声。来源可以是用户录音、实测有声的模型原声，或工具箱里的房间底噪。
 3. 音效：只放在有物理或信息原因的动作上（通知到达、放稳、扫描）。时间取段落卡和动画 `timing.js` 里的同一个事件时点，换成全片时间（镜头起点加镜内秒数）。
-4. 音乐：只用用户提供或已授权的曲子；旁白期间让位，语义段落结束后再回升。没有可用音乐时不配。
+4. 音乐：用户提供或已授权的曲子，或用 `ntf score` 写的原创配乐（见下文“代码合成配乐”）；旁白期间让位，语义段落结束后再回升。讲解片里没有合适的音乐时不配。
 
 ## 时间规则
 
@@ -33,7 +33,66 @@ ffmpeg -f lavfi -i "sine=frequency=95:duration=0.35:sample_rate=48000" -f lavfi 
 ffmpeg -f lavfi -i "anoisesrc=color=pink:duration=0.6:seed=9:sample_rate=48000" -af "highpass=f=250,lowpass=f=3500,afade=t=in:st=0:d=0.42:curve=exp,afade=t=out:st=0.42:d=0.18,volume=0.7,aformat=channel_layouts=stereo" whoosh.wav
 ```
 
-改频率、时长和 `seed` 可以让本片的提示音和别的片子不一样。房间底噪的做法见 [本机工具箱](toolbox.md)。
+改频率、时长和 `seed` 可以让本片的提示音和别的片子不一样。需要成套的提示音、转场声、环境声或整首配乐时，用下文的 `ntf score`。房间底噪的做法见 [本机工具箱](toolbox.md)。
+
+## 代码合成配乐
+
+无口播的宣传片、片头、落版和方向小样，节奏由音乐组织，画面卡在拍上。没有现成曲子时，用 `ntf score` 写一首原创配乐：一个 Python 脚本定义 `DUR` 和 `score(S)`，音符、鼓点和音效都按秒数放，脚本与代码动画读同一份时间表，切点、重拍和音效自然对齐。只用标准库，固定种子，同样的脚本得到同样的声音；20 秒的配乐约需十几秒合成。乐器配方和接口改编自 garden-skills motion-showreel 的内置合成器。
+
+```python
+"""animation/score.py：和画面共用 animation/timeline.json"""
+import json
+from pathlib import Path
+TL = json.loads((Path(__file__).parent / 'timeline.json').read_text())
+DUR, T = TL['dur'], TL['T']
+
+def score(S):
+    S.tempo(TL.get('bpm', 120))                      # S.beat(n)、S.bar(n) → 秒
+    drums = S.bus('drums', gain=0.9)
+    bass = S.bus('bass', gain=0.6, duck=0.5)
+    music = S.bus('music', gain=0.5, reverb=0.3, highpass=180, duck=0.6)
+    sfx = S.bus('sfx', gain=0.8, reverb=0.15)
+    for t in S.steps('x.x.x.x.x.x.x.x.', 0.5):                 # 每拍一下底鼓，共八拍
+        drums.add(S.kick(), t); S.duck(t, 0.8)                  # 侧链：bass、music 在底鼓处让位
+    bass.add(S.bass('D2', S.bar(2)), 0)
+    music.add(S.pad(S.chord('D3', 'm9'), S.bar(2)), 0)
+    sfx.add(S.whoosh(0.6, peak=0.7), T['cut'] - 0.6 * 0.7)      # 最响点对准切点
+    S.gap(T['drop'] - S.beat(0.5), T['drop'])                  # 重拍前真的空半拍，混响尾巴一起收
+    drums.add(S.impact(), T['drop'])
+```
+
+```bash
+ntf score PROJECT --file animation/score.py --select film.background
+ntf inspect PROJECT/assets/audio/score_….wav --audio-check --drop 8.0 --output work/qa-score-v1
+```
+
+清单里写 `"background_audio": {"selection": "film.background", "volume": 1.0}`。
+
+接口要点（参数名用 Python 写法，如 `pitch_decay`、`env_amt`、`drive_amt`；上升音效的起止频率写 `start`、`end`）：
+
+| 类别 | 写法 |
+|---|---|
+| 节奏与和声 | `S.tempo(bpm, beats_per_bar=4)`、`S.beat(n)`、`S.bar(n)`、`S.steps('x..x', step=0.25)`、`S.swing(n)`、`S.humanize(t, ms=8)`；`S.midi('C#4')`、`S.hz('A4')`、`S.chord(root, 'm9', inversion)`、`S.scale(root, 'dorian')(degree)`，五声调式有 `gong shang jue zhi yu` |
+| 总线 | `S.bus(name, gain, pan, reverb, highpass, lowpass, duck)`；`bus.add(sound, t, gain=1, pan=0)`，t 可以为负 |
+| 全片 | `S.duck(t, depth, release)` 侧链触发点；`S.space(room=0.84, damp=0.3, width=1)` 共享混响；`S.gap(start, end)` 静半拍；`S.master(lufs=-16, ceiling_db=-1.5)` |
+| 鼓 | `kick` `snare` `clap` `hat(open=)` `crash` `tom(note)` `shaker` `rim` |
+| 低音与和声 | `bass(note, dur)` `sub(note, dur, harm=0.15)` `pad(notes, dur, voices=3, cutoff=1800)` `keys(notes, dur)`（FM 电钢琴） |
+| 旋律 | `pluck(note, dur, bright, damp)`（拨弦，低 bright 高 damp 接近尼龙弦、古琴） `mallet(note, dur, material='marimba')`（xylo、vibes、glock、kalimba、steel、wood） `bell(note, dur)` `lead(note, dur)` |
+| 音效 | `riser(dur)` `downlifter(dur)` `whoosh(dur, peak=0.7)` `impact(size)` `boom()` `click()` `tick()` `pop(note)` `blip(note)` `swipe(dur)` `glitch(dur)` `shimmer(dur, root)` |
+| 环境 | `ambience(dur, kind='room')`，kind 可选 tape、vinyl、wind、rain |
+| 底层 | `osc(n, freq, wave)` `noise(sec, seed)` `adsr` `exp_env` `biquad` `lowpass` `highpass` `bandpass` `drive` `fade` `reverse` `mul` `add_into`，自己做这支片子独有的声音 |
+
+乐器返回单声道数组，`pad`、`whoosh`、`ambience` 返回 `{'L', 'R'}`。内置音色是素材：改参数、换种子、叠两层，往往比默认值更像这支片子的声音。
+
+写法要点：
+
+- **先定声音方向**（direct 的声音设计）：对标、音乐角色、曲线和母题写进备稿，再写脚本。没有方向时合成配乐会收敛成同一首歌：A 小调、120 BPM 四拍底鼓、每个重拍撞击加镲、钟声落版、锯齿铺底当万能垫子。同一目录做过的片子，至少换掉曲线、配器或调式中的两项。
+- **时间来自时间表**：音效落在动作那一帧；呼啸声的最响点在 `peak × dur`，放在切点之前这么久；吸气 → 爆发的曲线用 `S.gap` 在重拍前空半拍，空完后的第一个声音是全片最重要的声音之一。
+- **低频要收住**：铺底和旋律总线加 `highpass` 150–250；底鼓衰减不超过 0.45 秒；贝斯低于 MIDI 40 时手机外放听不见，靠 `sub` 的 `harm` 或锯齿波的泛音带出来。混响只发送给 music 和 sfx（0.15–0.35），鼓和贝斯保持干声。
+- **侧链是一种风格**：`duck` 的泵感属于电子舞曲；电影感、手作、东方写意的片子不开侧链。
+- **母带**：混好后自动拉到 −16 LUFS，峰值限制在 −1.5 dBFS；合成时 compose 再按清单统一响度。
+
+检查：`ntf inspect FILE --audio-check --drop 重拍秒数 --output DIR` 给出倍频程平衡、重拍前的凹陷量和波形、频谱图。凹陷不到 4 dB 说明鼓或铺底没停；低频比 1 kHz 高出 14 dB 以上会轰。打开 `audio_wave.png` 看音量起伏是否和所选曲线一致（吸气 → 爆发在重拍处最满，累加一路变厚，抽空处断崖），`audio_spectrum.png` 看低频是否一直轰着、高频是否完全没有。哪一轨出了问题，加 `--stems` 重渲，逐条听或看分轨。Agent 听不到声音，交付时写明听感未经人耳确认，请用户开声音看一遍。
 
 ## 按时间表预混底声
 

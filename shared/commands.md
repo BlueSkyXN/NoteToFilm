@@ -28,7 +28,8 @@
 | 制作参数化动效素材 | `ntf motion PROJECT --manifest FILE [--scene ID]` |
 | 动效预检与压缩预览 | `ntf motion PROJECT --manifest FILE --plan-only` / `--preview-only --preview-time SECONDS` |
 | 探测媒体、完整解码与JPEG抽帧 | `ntf inspect FILE --decode --frames 3 --output DIR --max-width 960` |
-| 标出冻结、黑场和静音区间 | `ntf inspect FILE --scan [--timeline TIMELINE]` |
+| 标出冻结、黑场和静音区间 | `ntf inspect FILE --scan [--timeline TIMELINE] [--hold 16.5-20]` |
+| 看声音：频段平衡、重拍前的呼吸、波形与频谱图 | `ntf inspect FILE --audio-check [--drop 15 --beat-seconds 0.5] --output DIR` |
 | 按时间看视频的联系表 | `ntf sheet FILE --output DIR [--timeline TIMELINE] [--fps 2]` |
 | 多个视频同时刻并排、候选图宫格 | `ntf compare A.mp4 B.mp4 --at 3 --at 9 --output DIR` / `ntf compare a.png b.png c.png --output DIR` |
 | 剪点两侧叠图核对位置 | `ntf compare prev.mp4@11.0 next.mp4@0.1 --overlay --output DIR` |
@@ -37,6 +38,7 @@
 | 复看指定时段 | `ntf sheet FILE --output DIR --start 12 --end 16 --fps 8` |
 | 网页动画静帧预览与确定性检查 | `ntf web-render PROJECT --page animation/s02 --scene s02 --preview-time 1 --preview-time 3.5` |
 | 网页动画渲染为项目素材 | `ntf web-render PROJECT --page animation/s02 --scene s02 [--duration SECONDS]` |
+| 合成原创配乐与音效 | `ntf score PROJECT --file animation/score.py --select film.background [--stems]` |
 | 导出指定最终成片的审阅页 | `ntf preview PROJECT --video FINAL_FILE --output DIR` |
 | 后处理成片携带对应时间表导出 | `ntf preview PROJECT --video FINAL_FILE --timeline TIMELINE --output DIR` |
 | 双遍响度校准并保留原片 | `ntf normalize MP4 --output FINAL_MP4 --lufs -17 --true-peak -2 --report REPORT` |
@@ -79,9 +81,13 @@ PROJECT 与文件参数都传具体路径。动作 ID 从计划或 `ready` 结�
 
 `sheet` 把视频按时间抽帧排成 JPEG 网格，每格标注该帧的实际源时间；给出 `--timeline` 时同时标注镜头 ID，`sheet.json` 列出每帧对应的字幕。`--cuts` 只取每个剪点或转场前后 `--cut-padding` 秒，`--start/--end` 复看指定时段；单次最多约 600 帧，超出时降低 `--fps` 或缩小时段。输出目录须为空，以保留之前的查看记录。需要 render 依赖中的 Pillow。
 
-`web-render` 打开项目内提供 `window.render(t)` 的页面，按项目画幅和帧率逐帧截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）；时长默认读页面的 `window.DUR`。需要异步加载的入口应先同步设置 `window.READY = false`，再提供 `window.render`，资源就绪后设置为 `true`。入口未声明 READY 时，提供 render 即可截图。`--preview-time` 可重复，只输出静帧，并按另一种渲染顺序比对画面是否只由时间决定；加 `--text-check` 时报告文字出界、重叠和过小并输出标注图。渲染可加 `--dpr`（超采样，1–3）、`--subframes`（子帧运动模糊，1–8，`--shutter` 调快门比例）和 `--grain`（编码时叠加颗粒，0–40）。页面目录内容与参数不变时复用已有素材，`--force` 另生成新版本。需要 Playwright（web 可选依赖）和 Chromium 或本机 Chrome；页面写法在 compose Skill 的代码动画说明。
+`web-render` 打开项目内提供 `window.render(t)` 的页面，按项目画幅和帧率逐帧截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）；时长默认读页面的 `window.DUR`。需要异步加载的入口应先同步设置 `window.READY = false`，再提供 `window.render`，资源就绪后设置为 `true`。入口未声明 READY 时，提供 render 即可截图。`--preview-time` 可重复，只输出静帧，并按另一种渲染顺序比对画面是否只由时间决定；加 `--text-check` 时报告文字出界、重叠和过小并输出标注图，`counts` 按类型计数；整段落在画外的字不报，页面把上下文的 `ntfDecorative` 设为 true 期间画的字不记录（骨架 `kit.js` 的 `decorative()`）。渲染可加 `--dpr`（超采样，1–3）、`--subframes`（子帧运动模糊，1–8，`--shutter` 调快门比例）和 `--grain`（编码时叠加颗粒，0–40）。页面目录内容与参数不变时复用已有素材，`--force` 另生成新版本。需要 Playwright（web 可选依赖）和 Chromium 或本机 Chrome；页面写法在 compose Skill 的代码动画说明。
 
-`inspect --scan` 报告冻结（默认至少 1 秒，可用 `--freeze-seconds` 调整）、黑场和低电平停顿（低于 −35 dBFS，默认至少 0.5 秒，可用 `--silence-seconds` 调整）。加 `--timeline` 可定位镜头。每段停顿的 `near_silence_seconds` 累计连续至少 0.2 秒低于 −70 dBFS 的时间，`digital_silence_seconds` 累计解码后所有声道连续至少 1 毫秒样本为零的时间。按区间复听，结合设计判断停顿是否自然。
+`inspect --scan` 报告冻结（默认至少 1 秒，可用 `--freeze-seconds` 调整）、黑场和低电平停顿（低于 −35 dBFS，默认至少 0.5 秒，可用 `--silence-seconds` 调整）。加 `--timeline` 可定位镜头。每段停顿的 `near_silence_seconds` 累计连续至少 0.2 秒低于 −70 dBFS 的时间，`digital_silence_seconds` 累计解码后所有声道连续至少 1 毫秒样本为零的时间。按区间复听，结合设计判断停顿是否自然。`--hold START-END` 可重复，声明有意停留（落版、读字、静态证据），落在其中（前后放宽 0.35 秒）的冻结标 `intended: true`。黑场区间附 `bright_pixel_share`（中间一帧亮度超过 25% 的像素占比）和 `has_content`：深色底上有字或图形时为 true，看原帧判断，不必为此改底色。
+
+`inspect --audio-check` 另给 `audio_balance`：各倍频程能量相对 1 kHz 的分贝数（粉红噪声约为 0），低频（31–125 Hz）和高频（4–8 kHz）偏离常见范围时在 `notes` 里提示。`--drop SECONDS` 可重复，按 `--beat-seconds`（默认 0.5）量重拍前最后半拍比前一小节低多少、重拍比前一小节高多少，写进 `audio_drops`；半拍凹陷不到 4 dB 或重拍没有更响时提示。带 `--output` 时写出 `audio_wave.png`、`audio_spectrum.png`。这些是看不到听感时的线索，不进入 verification。
+
+`score` 运行项目内的配乐脚本（定义 `DUR` 与 `score(S)`），只用标准库合成乐器、音效和环境声，按总线做滤波、侧链让位和共享混响，母带到 −16 LUFS、峰值限制在 −1.5 dBFS，输出 48 kHz 立体声 WAV 并登记采用到 `film.score`（`--select` 可改）。`--duration` 覆盖脚本里的 `DUR`；`--stems` 另存每条总线未经母带的分轨到 `work/`。脚本目录内的 .py、.json、.js、.txt、.csv 与时长不变时复用已有素材，`--force` 另生成新版本。写法在 compose Skill 的声音后期说明。
 
 `compare` 输出 `compare.jpg` 和 `compare.json`。视频按 `--at` 取该时刻正在显示的帧，每行一个视频。`FILE@秒数` 指定单帧，时刻从首个显示帧起算，必须小于片长。图上标注实际帧时间。JSON 的 `times` 保留请求时刻，`frame_times` 给出对应帧的显示起点。全部是单帧时按 `--columns` 排成宫格。`--overlay` 等权叠合，各输入按原比例居中对齐到首个画面的格子。`--crop x,y,宽,高` 按 0–1 比例裁出同一区域，每个输入的裁区宽高至少为一个像素。中文标签用 `--font-file` 指定字体。输出目录须为空。
 

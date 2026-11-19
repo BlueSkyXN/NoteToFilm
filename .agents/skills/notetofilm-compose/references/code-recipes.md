@@ -2,7 +2,7 @@
 
 全部是**只依赖 t 的纯函数写法**，可以直接搬进 `render(t)`。示例默认已经从骨架的 `motion.js` 引入了需要的函数，`ctx` 是 `setupCanvas` 返回的 2D 上下文，`U = Math.min(W, H) / 1080`。用骨架的 `kit.js` 时，`base()` 之后直接写设计像素（短边 720），把示例里的 `* U` 去掉，`W`、`H` 换成 `DW`、`DH`。这些是手法的骨架，配色、尺寸和节奏按设计备稿重新设计。
 
-示例里的 `b(n)` 是第 n 拍的秒数：`const b = beats(120)`（`motion.js`）。讲解片通常按 `timing.js` 里来自真实配音的 `BEATS` 时点安排，把 `b(n)` 换成对应时点即可。示例提到的音效（click、whoosh、tick、impact）在 NoteToFilm 中来自导入的音效素材，按同一时点放进合成。
+示例里的 `b(n)` 是第 n 拍的秒数：`const b = beats(120)`（`motion.js`）。讲解片通常按 `timing.js` 里来自真实配音的 `BEATS` 时点安排，把 `b(n)` 换成对应时点即可。示例提到的音效（click、whoosh、tick、impact）可用 `ntf score` 按同一时点合成（见 [声音后期](sound-mix.md)），也可以导入已有的音效素材。
 
 改编自 garden-skills motion-showreel 的 references/recipes.md（MIT License，见 NoteToFilm 仓库根目录 THIRD_PARTY_NOTICES.md）。
 

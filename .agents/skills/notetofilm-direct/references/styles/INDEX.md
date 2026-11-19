@@ -52,8 +52,12 @@
 |  | [数据动态](data-motion.md) | 数字和图表本身就是主角 | 代码动画、`ntf motion` | 数据、趋势、对比 |
 |  | [白板讲解](whiteboard-explainer.md) | 线条按讲解顺序出现，边画边讲 | 代码动画、`ntf motion` | 原理推导、步骤说明 |
 |  | [瑞士网格](swiss-editorial.md) | 网格、一种字体、一个信号色，像印刷一样精确 | 代码动画、`ntf motion` | 结论卡、关键词、章节标题 |
+| 界面与产品 | [极简界面](minimal-ui.md) | 干净舞台上的界面在变形、点击、拖拽，弹簧手感 | 代码动画、真实截图 | 产品宣传、功能串联、多入口 |
+|  | [终端字符](terminal-ascii.md) | 等宽字符组成一切：打字的命令、字符图形、闪烁的光标 | 代码动画 | 开发者工具、开源项目、片头 |
+|  | [一笔线描](one-line.md) | 一条连续的线勾出轮廓、串起关系，也能分叉成版本历史 | 代码动画 | 品牌故事、分支历史、名称演绎 |
+|  | [粒子场](particle-field.md) | 成千上万个有目的的点：组字、流动、炸开、倒流 | 代码动画 | 记忆点、片头、短预告 |
 
-“图形与讲解”组的五个风格和铜版画、杂志拼贴改编自 garden-skills motion-showreel 风格库（MIT License，见 NoteToFilm 仓库根目录 THIRD_PARTY_NOTICES.md），保留原有规则，删去其工具专用参数，改写了声音一节，并补充 NoteToFilm 的制作方式。motion-showreel 还有四十多种风格，需要时可按其规则和本库的配方模板改写成新文件。“人物与场景”组的其余五个和纪实影像为本项目编写。
+“图形与讲解”“界面与产品”两组的九个风格和铜版画、杂志拼贴改编自 garden-skills motion-showreel 风格库（MIT License，见 NoteToFilm 仓库根目录 THIRD_PARTY_NOTICES.md），保留原有规则，删去其工具专用参数，改写了声音一节，并补充 NoteToFilm 的制作方式。motion-showreel 还有三十多种风格，需要时可按其规则和本库的配方模板改写成新文件。“人物与场景”组的其余五个和纪实影像为本项目编写。
 
 ## 新增风格
 

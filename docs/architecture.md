@@ -43,7 +43,7 @@ NoteToFilm 由三部分协作：Agent 做判断，Skill 提供方法，NoteToFil
 
 `ntf normalize` 只保留第一条视频和第一条音轨，其他音轨和内封字幕不会进入输出。双音轨或内封字幕的成片，在合成清单中设置 `output.audio_loudness_lufs`，由合成阶段处理响度。
 
-不走整套流程也可以：`ntf generate`（单次生图或生视频）、`ntf audio`（单段配音）、`ntf motion`（参数化动效）、`ntf web-render`（网页动画）各自登记素材，再用显式合成清单交给 `ntf compose`。改稿时更新分镜后重新 `ntf plan`，输入没变的动作复用已有结果。
+不走整套流程也可以：`ntf generate`（单次生图或生视频）、`ntf audio`（单段配音）、`ntf motion`（参数化动效）、`ntf web-render`（网页动画）、`ntf score`（代码合成的配乐与音效）各自登记素材，再用显式合成清单交给 `ntf compose`。改稿时更新分镜后重新 `ntf plan`，输入没变的动作复用已有结果。
 
 ## 项目里有什么
 
@@ -98,7 +98,8 @@ NoteToFilm 由三部分协作：Agent 做判断，Skill 提供方法，NoteToFil
 | `text_overlay.py` | `compose` 的字幕与配字 | FFmpeg subtitles 滤镜或 Pillow 逐帧绘制；也可内封为字幕轨 |
 | `motion.py`、`motion_render.py` | `motion` | Pillow 绘制参数化图层与关键帧 |
 | `web_render.py` | `web-render` | Playwright 驱动 Chrome 或 Chromium，调用页面的 `render(t)` 逐帧截图 |
-| `sheet.py`、`compare.py`、`inspection.py` | `sheet`、`compare`、`inspect` | 按时间抽帧拼联系表；多画面并排、叠合与局部放大；探测、全量解码、冻结、黑场与停顿检测（区分极低电平与全声道零样本） |
+| `synth.py` | `score` | 只用标准库合成乐器、音效与环境声；总线滤波、混音、母带与限幅交给 FFmpeg |
+| `sheet.py`、`compare.py`、`inspection.py` | `sheet`、`compare`、`inspect` | 按时间抽帧拼联系表；多画面并排、叠合与局部放大；探测、全量解码、冻结（可标有意停留）、黑场（区分全黑与深色有内容）与停顿检测（区分极低电平与全声道零样本）；倍频程平衡、重拍前凹陷与波形频谱图 |
 | `loudness.py` | `normalize` | 双遍 loudnorm；复制第一条视频，只处理第一条音轨 |
 | `preview.py`、`review_server.py` | `preview`、`serve` | 导出审阅页；本地服务支持拖动进度 |
 | `config.py` | `routes`、`config-init` | 读取路由配置、连接来源 |
