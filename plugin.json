@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "notetofilm-local",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "以本地 Skill 编排材料、分镜、图像、视频、Edge TTS 和混合成片，项目与媒体保存在本机。",
   "repository": "https://github.com/BlueSkyXN/notetofilm",
   "keywords": ["video", "local", "skills", "storyboard", "edge-tts"],
