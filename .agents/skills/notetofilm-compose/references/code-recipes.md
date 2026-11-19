@@ -1,8 +1,8 @@
 # 现成写法
 
-全部是**只依赖 t 的纯函数写法**，可以直接搬进 `render(t)`。示例默认已经从骨架的 `motion.js` 引入了需要的函数，`ctx` 是 `setupCanvas` 返回的 2D 上下文，`U = Math.min(W, H) / 1080`。这些是手法的骨架，配色、尺寸和节奏按设计备稿重新设计。
+全部是**只依赖 t 的纯函数写法**，可以直接搬进 `render(t)`。示例默认已经从骨架的 `motion.js` 引入了需要的函数，`ctx` 是 `setupCanvas` 返回的 2D 上下文，`U = Math.min(W, H) / 1080`。用骨架的 `kit.js` 时，`base()` 之后直接写设计像素（短边 720），把示例里的 `* U` 去掉，`W`、`H` 换成 `DW`、`DH`。这些是手法的骨架，配色、尺寸和节奏按设计备稿重新设计。
 
-示例里的 `b(n)` 是第 n 拍的秒数：`const b = beats(120)`（`motion.js`）。讲解片通常按 `timing.js` 里来自真实配音的 `BEATS` 时点安排，把 `b(n)` 换成对应时点即可。示例提到的音效（click、whoosh、tick、impact）在 NoteToFilm 中来自导入的音效素材，按同一时点放进合成。
+示例里的 `b(n)` 是第 n 拍的秒数：`const b = beats(120)`（`motion.js`）。讲解片通常按 `timing.js` 里来自真实配音的 `BEATS` 时点安排，把 `b(n)` 换成对应时点即可。示例提到的音效（click、whoosh、tick、impact）可用 `ntf score` 按同一时点合成（见 [声音后期](sound-mix.md)），也可以导入已有的音效素材。
 
 改编自 garden-skills motion-showreel 的 references/recipes.md（MIT License，见 NoteToFilm 仓库根目录 THIRD_PARTY_NOTICES.md）。
 
@@ -106,7 +106,7 @@ const x = lerp(-W * 0.4, W * 1.2, p), slant = H * 0.35;
 ctx.moveTo(-W, 0); ctx.lineTo(x + slant, 0); ctx.lineTo(x, H); ctx.lineTo(-W, H); ctx.closePath();
 ctx.clip(); drawB(); ctx.restore();
 ```
-把路径换成一个巨大的字（`ctx.font` + `ctx.fillText` 配合 `globalCompositeOperation = 'destination-in'`），就是「文字即窗口」。
+把路径换成一个巨大的字（`ctx.font` + `ctx.fillText` 配合 `globalCompositeOperation = 'destination-in'`），就是「文字即窗口」。`destination-in` 会作用到画布上已有的全部内容，文字窗口要先在离屏画布上画好 B 再用字裁，最后整张贴回主画布。
 
 ## 7. 粒子组字（无状态写法）
 
@@ -134,6 +134,15 @@ TARGETS.forEach(([tx, ty], i) => {
 });
 ```
 几千个粒子 Canvas 能撑住；上万个时改用 WebGL 的点精灵，或者 Three.js 的 `InstancedMesh`（同样把公式写在顶点着色器里，uniform 传 t）。
+
+同一组粒子依次组成几个词或图形时，粒子数 N 固定，各目标的点数不同。第 w 个目标按比例取点，前一个目标的位置作为起点，按顺序叠加：
+
+```js
+const pick = (pts, i) => pts[pts.length > N ? Math.floor(i * pts.length / N) : i % pts.length];   // 点多于粒子时均匀抽样
+let [x, y] = start(i);
+TIMES.forEach((tw, w) => { const k = spring(t - tw - hash(i, w) * 0.4, { freq: 1.9, damp: 0.72 }); if (k > 0) { const [tx, ty] = pick(TARGETS[w], i); x = lerp(x, tx, k); y = lerp(y, ty, k); } });
+```
+只用 `i % pts.length` 而点比粒子多时，取到的是按行扫描的前 N 个点，字只会组出上半部分。
 
 ## 8. 无状态发射器（火花、尾迹、彩纸）
 

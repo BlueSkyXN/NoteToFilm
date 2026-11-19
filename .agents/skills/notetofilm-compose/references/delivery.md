@@ -9,7 +9,8 @@
 1. 全片：`ntf sheet FINAL_FILE --output DIR --timeline TIMELINE --fps 1`，短片可用 2。先只看画面，判断每段的变化能否看出来；再对照字幕与旁白。
 2. 剪点：`ntf sheet FINAL_FILE --output DIR --timeline TIMELINE --cuts --fps 8` 查看每个剪点或转场前后。对照转场对：A 镜结束时的状态在 B 镜是否成立，对象的位置、方向和数量是否连续。
 3. 关键变化：段落卡写明的关键时点，用 `--start`、`--end` 配合较高帧率复看。改版前后或几个方向之间，用 `ntf compare 旧.mp4 新.mp4 --at … --output DIR` 在同一时刻并排比较；生成画面里的小字用 `--crop` 放大查看。
-4. 定位提示：`ntf inspect FINAL_FILE --scan --timeline TIMELINE` 标出冻结、黑场和静音区间。静态证据和有意停留也会显示为冻结，结合段落卡判断是有意停留还是空等；意外的黑场、静音和断音回到对应镜头处理。
+4. 定位提示：`ntf inspect FINAL_FILE --scan --timeline TIMELINE` 标出冻结、黑场和静音区间。段落卡里有意停留的区间用 `--hold 开始-结束` 声明，落在其中的冻结标为 `intended`，其余冻结判断是不是空等；黑场条目 `has_content` 为 true 时是深色有内容的画面。意外的黑场、静音和断音回到对应镜头处理。
+5. 声音：`ntf inspect FINAL_FILE --audio-check --output DIR` 另给倍频程平衡和波形、频谱图；有吸气 → 爆发的段落，用 `--drop 重拍秒数` 量重拍前那半拍是否真的空下来。
 
 每次查看写入新的空目录，旧记录保留，便于对照修改前后。联系表能发现状态回退、对象跳变、字幕遮挡和画面与旁白不符；帧间运动是否平滑、有无微抖，以及声音听感，需要人连续播放确认。没有人看过时，在汇报中写明这几项未检查。
 

@@ -101,6 +101,14 @@
 | `web_render_mismatch` | 导出视频与计划时长不符 | 检查 `window.DUR` 或 `--duration` |
 | 预览返回 `deterministic: false` | 画面不只由时间决定 | 按 `nondeterministic` 列出的时刻，查跨帧状态、随机数、实时时钟或晚到的资源 |
 
+## 代码合成配乐
+
+| code | 原因 | 处理 |
+|---|---|---|
+| `score_parameters` | 脚本不在项目内、没有 `score(S)` 或 `DUR`、音名或和弦写错、总线参数越界，或没往任何总线放声音 | 按报错修脚本；`DUR` 也可用 `--duration` 指定；音名写成 A3、C#4、Eb2 或 MIDI 数字 |
+| `score_failed` | 脚本运行时报错 | 报错里带异常类型和信息，修正后重跑 |
+| `media_command_failed`（来自 `score`） | FFmpeg 混音或母带失败 | 看 `details.stderr`；FFmpeg 需 4.4 以上（`amix` 的 `normalize` 选项） |
+
 ## 不算错误、但值得注意
 
 - `inspect --scan` 报告的冻结、黑场和静音只是提示。静态画面和有意停留同样会出现，结合设计判断。

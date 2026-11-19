@@ -2,6 +2,7 @@
 // 改编自 garden-skills motion-showreel 的 scripts/lib/text-hook.mjs（MIT License，见仓库 THIRD_PARTY_NOTICES.md）。
 // 记录 Canvas 2D 的 fillText / strokeText（含绘入离屏画布后再 drawImage 的文字）和 DOM / SVG 文字节点的屏幕矩形。
 // 看不到：WebGL 纹理里的字、图片里的字、被其他绘制遮住的字。
+// 页面把上下文的 ntfDecorative 设为 true 时（形变途中的乱码字符、拉远后当纹理用的小字），这期间画的字不记录。
 (function textHook() {
   const boxes = new WeakMap();
   const list = c => { let l = boxes.get(c); if (!l) boxes.set(c, (l = [])); return l; };
@@ -13,7 +14,7 @@
     P.restore = function () { if (this.__cs && this.__cs.length) this.__clip = this.__cs.pop(); return o.restore.apply(this, arguments); };
     P.clip = function () { this.__clip = true; return o.clip.apply(this, arguments); };
     const rec = function (text, x, y, maxW) {
-      const s = String(text); if (!s.trim()) return;
+      const s = String(text); if (!s.trim() || this.ntfDecorative) return;
       const m = this.measureText(s);
       let l = x - m.actualBoundingBoxLeft, r = x + m.actualBoundingBoxRight;
       const t = y - m.actualBoundingBoxAscent, b = y + m.actualBoundingBoxDescent;

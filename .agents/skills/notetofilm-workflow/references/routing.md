@@ -7,6 +7,7 @@
 | 已有正式分镜 | 所需 image、video、audio，再 compose |
 | 选择玩法、觉得像播片、需要改风格或故事感 | direct 比较叙事、制作路线和视觉语言，再执行所选路线 |
 | 已决定自由文生方向 | direct 定事件与边界 → video 候选 → 选片并修订分镜 → audio/compose |
+| 无口播的宣传片、片头或方向小样 | direct 定结构、BPM 和小节（compose 代码动画手法库的时长模板）→ 代码动画与声音共用一份时间表 → `web-render` → compose 单场景合成 |
 | 已有图音和顺序 | compose |
 | 只换图片 | image 或导入，再选择与合成 |
 | 只改旁白 | direct 更新，再 audio 和时间安排 |

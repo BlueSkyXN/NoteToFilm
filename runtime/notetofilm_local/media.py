@@ -13,14 +13,14 @@ from pathlib import Path
 from .errors import NTFError
 
 
-def run_media_command(args, *, cwd=None, timeout=300):
-    """Run an argv list, never a shell command."""
+def run_media_command(args, *, cwd=None, timeout=300, text=True):
+    """Run an argv list, never a shell command. text=False keeps stdout as bytes (raw frames or samples)."""
     if not shutil.which(str(args[0])):
         raise NTFError("media_tool_missing", f"Required executable is unavailable: {args[0]}")
     try:
         result = subprocess.run(
             [str(item) for item in args], cwd=cwd, capture_output=True,
-            text=True, timeout=timeout, check=False,
+            text=text, timeout=timeout, check=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise NTFError("media_command_timeout", "Local media processing exceeded its time limit.") from exc
@@ -29,7 +29,8 @@ def run_media_command(args, *, cwd=None, timeout=300):
     if result.returncode:
         raise NTFError(
             "media_command_failed", "Local media processing failed.",
-            {"tool": str(args[0]), "returncode": result.returncode, "stderr": result.stderr[-6000:]},
+            {"tool": str(args[0]), "returncode": result.returncode,
+             "stderr": (result.stderr if text else result.stderr.decode(errors="replace"))[-6000:]},
         )
     return result
 
