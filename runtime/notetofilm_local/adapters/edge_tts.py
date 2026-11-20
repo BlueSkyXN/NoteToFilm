@@ -48,6 +48,31 @@ def _visible(text):
     return len(re.sub(r"\s", "", text))
 
 
+# When a cue would grow past CUE_MAX_CHARS, it is cut at the last clause mark inside it,
+# then at the last space, instead of in front of the incoming word ("怎么 / 算").
+OVERFLOW_BREAKS = (SOFT_BREAK | set("、"), set(" \t"))
+OVERFLOW_HEAD_MIN = 4
+
+
+def _pending_text(words):
+    return "".join(piece for piece, *_ in words)
+
+
+def _pending_cue(words):
+    return {"start_seconds": words[0][1], "end_seconds": words[-1][2], "text": _pending_text(words).lstrip()}
+
+
+def _overflow_break(words, incoming):
+    """Index to split the pending words at before adding ``incoming``; len(words) keeps them whole."""
+    for marks in OVERFLOW_BREAKS:
+        for cut in range(len(words) - 1, 0, -1):
+            head, tail = words[:cut], words[cut:]
+            if (any(ch in marks for ch in head[-1][3]) and _visible(_pending_text(head)) >= OVERFLOW_HEAD_MIN
+                    and _visible(_pending_text(tail) + incoming) <= CUE_MAX_CHARS):
+                return cut
+    return len(words)
+
+
 def _word_cues(spoken, words):
     """Align service word boundaries to the spoken text and group them into short cues.
 
@@ -67,27 +92,25 @@ def _word_cues(spoken, words):
         cursor = found + len(token)
     if not spans or re.search(r"\w", spoken[cursor:]):
         return None
-    cues, current = [], None
+    # Each pending word: (piece, start, stop, trailing). A piece runs to the next word.
+    cues, current = [], []
     for index, (begin, end, word) in enumerate(spans):
         tail_end = spans[index + 1][0] if index + 1 < len(spans) else len(spoken)
         piece = spoken[begin if index else 0:tail_end]
         start = word["offset"] / 10_000_000
         stop = (word["offset"] + word["duration"]) / 10_000_000
-        if current and _visible(current["text"] + spoken[begin:end]) > CUE_MAX_CHARS:
-            cues.append(current)
-            current = None
-        if current is None:
-            current = {"start_seconds": start, "end_seconds": stop, "text": piece.lstrip()}
-        else:
-            current["text"] += piece
-            current["end_seconds"] = stop
         trailing = spoken[end:tail_end]
+        if current and _visible(_pending_text(current) + spoken[begin:end]) > CUE_MAX_CHARS:
+            cut = _overflow_break(current, spoken[begin:end])
+            cues.append(_pending_cue(current[:cut]))
+            current = current[cut:]
+        current.append((piece, start, stop, trailing))
         if any(ch in SENTENCE_END for ch in trailing) or (
-                any(ch in SOFT_BREAK for ch in trailing) and _visible(current["text"]) >= CUE_MIN_CHARS):
-            cues.append(current)
-            current = None
+                any(ch in SOFT_BREAK for ch in trailing) and _visible(_pending_text(current)) >= CUE_MIN_CHARS):
+            cues.append(_pending_cue(current))
+            current = []
     if current:
-        cues.append(current)
+        cues.append(_pending_cue(current))
     for cue, following in zip(cues, cues[1:]):
         # Keep the line on screen through a short pause instead of flashing off between clauses.
         if 0 < following["start_seconds"] - cue["end_seconds"] <= 0.8:

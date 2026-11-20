@@ -30,7 +30,7 @@ NoteToFilm/
 │   │   │   └── style-recipe.template.md  # 可复用的风格配方
 │   │   └── references/
 │   │       ├── design-map.md      # 片型 × 制作路线 × 视觉语言 × 声音
-│   │       ├── formats.md         # 片型配方：十种片型的结构、开头、手法与坑
+│   │       ├── formats.md         # 片型配方：十二种片型的结构、开头、手法与坑
 │   │       ├── story-design.md    # 叙事方式、事实依据、段落与节拍、节奏和时长
 │   │       ├── script.md          # 旁白与画面文字
 │   │       ├── art-direction.md   # 美术设定、风格比较、构图分区、参考编号与一致性

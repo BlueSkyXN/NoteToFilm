@@ -186,5 +186,6 @@ ntf import PROJECT work/bed-v1.wav --select film.background
 ## 检查
 
 - `ntf inspect FILM --decode --audio-check` 看整体响度和真峰值；`ntf inspect FILM --scan --timeline TIMELINE` 的静音区间核对底声是否连续，`digital_silence_seconds` 应只出现在有意的黑场或静默处。
+- 合成把每镜时长取整到帧，镜头多时成片会比时间表总长多出零点几秒。配乐或底声只写到时间表总长，片尾就会出现一小段数字静音。底噪多铺约 1 秒，音乐的收尾仍按时间表安排。
 - 验证音乐让位时，用同一份时间表单独预混两条音乐检查轨。只传 `--music`，一条使用计划中的 `--duck-db`，另一条设 `--duck-db 0`，分别输出到新文件。用 `ffmpeg -i work/music-duck.wav -map 0:a:0 -af "atrim=start=20.7:duration=0.6,astats=metadata=0" -f null -` 读取 `RMS level dB`。两条轨都截取时间表中同一个旁白内部的窗口，按实际位置调整 `start` 和 `duration`。成片的混合音轨用于检查整体响度和旁白清晰度。
 - 能试听的人用耳机和手机扬声器各听一次：第一句话是否完整进入，镜头切换时环境声是否突变，关键数字是否被音乐盖住，片尾是否自然结束。Agent 听不到声音时，在交付说明里写明听感未经人耳确认。
