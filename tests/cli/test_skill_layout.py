@@ -19,6 +19,20 @@ spec.loader.exec_module(sync_module)
 
 
 class SkillLayoutTests(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec('PIL'), 'Pillow required to decode shot studies')
+    def test_linked_shot_studies_play_as_animations(self):
+        from PIL import Image, ImageChops
+
+        guide = ROOT / '.agents/skills/notetofilm-direct/references/shot-studies.md'
+        paths = re.findall(r'\]\(([^)]+\.gif)\)', guide.read_text(encoding='utf-8'))
+        self.assertTrue(paths, 'Shot studies need viewable examples')
+        for path in paths:
+            with self.subTest(path=path), Image.open(guide.parent / path) as clip:
+                self.assertTrue(clip.is_animated)
+                first = clip.convert('RGB')
+                clip.seek(clip.n_frames - 1)
+                self.assertIsNotNone(ImageChops.difference(first, clip.convert('RGB')).getbbox())
+
     def test_reference_graph_is_self_contained_and_reachable(self):
         for entry in (ROOT / '.agents/skills').glob('*/SKILL.md'):
             skill = entry.parent.resolve()
