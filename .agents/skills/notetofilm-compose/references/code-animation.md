@@ -39,19 +39,43 @@
 
 ## 时间来自项目
 
-先取得配音和 `ntf timing` 结果，再把 `timing.js` 里的关键变化放到对应秒数；旁白改动后同步更新。段落卡写的开始状态、主要变化和完成状态，就是动画要依次画出的内容。
+先取得配音和 `ntf timing` 结果，再把 `timing.js` 里的关键变化放到对应秒数；旁白改动后同步更新。整片一个页面、字要落在说到它的那个词上时，用 `ntf timing PROJECT --apply --js animation/<页面>/film-timing.js` 导出镜头窗口和逐词时间，页面里写 `W('s05', '通知')`，不手填秒数（示例见骨架的 `film-timing.js`）。段落卡写的开始状态、主要变化和完成状态，就是动画要依次画出的内容。
 
 参与动画的标签和图解文字在页面源码里维护；不随动画变化的标题和旁白字幕继续用合成清单的 `text_overlays` 和字幕。同一段文字只在一处维护。数字和准确文字注明材料中的事实编号。
 
 ## 衔接相邻镜头
 
 - 后一页的 t=0 应等于前一页的末帧：共用同一份绘制函数（把前一页的模块复制进本页目录导入），或把前一页末帧静帧放进本页目录作为起点，再让元素收起、移动或淡出。用 `ntf compare 前一页末帧.png 本页首帧.png --output DIR` 并排核对。
-- 生成的视频片段要和代码图形同屏（叠字、压暗、遮挡、与图形接力）时，用 FFmpeg 把采用的片段抽成帧序列放进页面目录，`render(t)` 按片段帧率取对应的一帧。片段比本镜短时停在末帧，用缓慢推近接住。
-- 片段多、帧数上千时，`render(t)` 写成 `async`，只用 `loadImage` 取这一刻要画的帧，最近用过的几十帧留在缓存里，超出就丢掉最早的；一次全部加载，浏览器内存会撑满。`web-render` 会等 `render(t)` 返回的 Promise 完成再截图。页面取不到某一帧时按缺资源报错，片段到齐、抽完帧再渲。
-- 叠加的字要贴在素材里的东西上（他画的圈旁边写标签、沿他画的线描粗）时，选机位固定的片段，在原尺寸帧上画网格，量出这些东西的像素位置。画这一帧用了多大的推近、取景中心在哪，叠加层就用同一套换算：先按放大倍数缩放，再平移掉取景起点，字会跟着画面一起推拉。镜头在动的片段，量几个关键帧再插值，或者换成固定机位的片段。
+- 生成的视频片段要和代码图形同屏（叠字、压暗、遮挡、与图形接力）时，用 `ntf frames` 把采用的片段抽成帧序列放进页面目录，页面用骨架的 `clips.js` 取帧，做法见下一节。片段比本镜短时停在末帧，用缓慢推近接住。
 - 页面里陈列已有成片时，每段按它从入画到退场的时长抽帧，免得循环或停帧。要遮去烧录字幕，可以用 `drawImage` 裁出字幕以上的部分，按原片背景色补齐下方，再用导出帧检查填色处有无色带。并排对照两种讲法时，可以保留体现差异的原文，去掉与本片旁白字幕重复的标题。
 - 从视频切进图解时，用上一镜的尾帧（`return_last_frame` 或工具箱“取最后一帧”）作位置参考，让图解里的对象落在视频对象的位置上，再展开解释；用 `ntf compare clip.mp4@末帧秒数 preview.png --overlay --output DIR` 叠合核对。
 - 一段连续动画跨两段旁白时，渲染成一个页面，在合成清单两镜里分别用 `duration_seconds` 和 `trim_start` 引用它的前后两段。
+
+## 视频片段加代码动画
+
+人物和物件的动作来自生成视频，准确的字、标注、图解和整屏转场由代码画，整片写成一个页面。骨架里的 [hybrid.html](../assets/code-animation/hybrid.html) 和 [hybrid.js](../assets/code-animation/hybrid.js) 是一个四镜示例：推车上的包裹、横甩到货架、往下穿进图解、取件单掠过后接顾客取件。
+
+1. **时间**：配音后 `ntf timing PROJECT --apply --js animation/film/film-timing.js`。字和动作写在 `W('镜头', '词')` 上。
+2. **片段**：生成并选好片段后，`ntf frames PROJECT --select s05.video --output animation/film/media/s05`，把返回的 `frames`、`fps` 填进 `clipLibrary`。帧按需加载、最近用过的留在缓存里，片段多也不会撑满内存；取不到的帧会让渲染停下，片段到齐再渲。
+3. **镜头表**：`SHOTS` 是 `[开始秒, 绘制函数]`，`render(t, frame)` 里用 `shotAt(SHOTS, t, frame)` 选镜头。它按 `frame.time` 选，开 `--subframes` 时硬切处不混帧。
+4. **叠字对齐素材**：`clips.play()` 返回这一帧的取景，`overlay(取景, () => …)` 里按素材像素画，字贴在素材里的东西上、随推拉一起动。坐标先在原尺寸帧上画网格量出来；只对机位固定的片段直接成立，镜头在动的片段量几个关键帧再插值，或换固定机位的片段。
+5. **转场**：[transitions.js](../assets/code-animation/transitions.js) 的 `whipPan`（横甩，约 0.24 秒）、`pushThrough`（上下穿越，约 0.34 秒）、`wipeBy`（遮挡物掠过，约 0.6 秒）。转场写成跨过剪点的一段，上一镜和下一镜用同一个 `across(t, 剪点, 时长)` 进度；一支片子挑两三种。
+6. **渲染**：`ntf web-render PROJECT --page animation/film/hybrid.html --scene film --subframes 4`，快速移动有真实的运动模糊。先 `--preview-time` 看转场中段和叠字。
+7. **检查**：`ntf sheet FILM --start 剪点前 --end 剪点后 --fps 8` 逐帧看转场（不留空白帧、不混帧、遮挡物认得出），`ntf inspect FILM --scan` 看 `low_motion` 和 `pace`。
+
+不花钱先试一遍模板：用 FFmpeg 做三段占位片段，导入并抽帧，再渲示例页面。
+
+```bash
+ffmpeg -f lavfi -i "color=c=0x8C8F92:s=1280x720:r=24:d=4" -vf "drawbox=x=550:y=370:w=180:h=140:color=0xD9822B:t=fill" -pix_fmt yuv420p cart.mp4
+ffmpeg -f lavfi -i "color=c=0x6E7377:s=1280x720:r=24:d=4" -vf "drawgrid=w=160:h=120:t=4:c=0x3B3F43,drawbox=x='1150-min(t\,1.5)*240':y=250:w=140:h=100:color=0xD9822B:t=fill" -pix_fmt yuv420p shelf.mp4
+ffmpeg -f lavfi -i "testsrc2=s=1280x720:r=24:d=4" -pix_fmt yuv420p pickup.mp4
+for c in cart shelf pickup; do
+  ntf import PROJECT $c.mp4 --kind video --select $c.video
+  ntf frames PROJECT --select $c.video --output animation/demo/media/$c
+done
+# 把骨架目录复制到 PROJECT/animation/demo/ 后：
+ntf web-render PROJECT --page animation/demo/hybrid.html --scene demo --subframes 4
+```
 
 ## 几个方向一起做
 
@@ -76,7 +100,7 @@
 ## 预览、渲染与接入
 
 1. 静帧预览：`ntf web-render PROJECT --page animation/s02 --scene s02 --preview-time 1 --preview-time 3.5 --text-check`。预览时刻须在页面时长以内。输出各时刻的 PNG，并在另一页面按不同顺序重画同样的时刻做比对；`deterministic` 为 false 时，按 `nondeterministic` 给出的时刻查找跨帧状态、随机数、实时时钟或晚到的资源。`--text-check` 记录 Canvas 与 DOM/SVG 文字的位置，报告出界（CUT，展示级大字出血记为 BLEED）、两段文字重叠（OVERLAP）和字过小（TINY，下限为画高的 2.5%，720p 约 18px，次要标注也按此），并输出标好框的图；WebGL 纹理和图片里的字看不到，要自己看。
-2. 渲染：去掉 `--preview-time`，按项目画幅和帧率逐帧截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）。时长默认读页面的 `window.DUR`，也可用 `--duration` 指定。页面目录内的文件和渲染参数不变时复用已有素材，`--force` 另生成新版本。
+2. 渲染：去掉 `--preview-time`，逐帧调用 `render(t, frame)`（`frame.time` 是这一帧的名义时刻），按项目画幅和帧率截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）。时长默认读页面的 `window.DUR`，也可用 `--duration` 指定。页面目录内的文件和渲染参数不变时复用已有素材，`--force` 另生成新版本。
    质感参数：`--dpr 2` 超采样后缩回项目画幅，细线和小字更干净，渲染约慢 3 倍；`--subframes 4` 每帧平均 4 个子帧得到运动模糊（`--shutter` 调快门比例，默认 0.5），渲染时间乘以子帧数；`--grain 4–8` 在编码时叠加随时间变化的颗粒，不在页面里逐帧画噪点；颗粒会让文件大幅变大，使用前看 [motion-craft.md](motion-craft.md) 第 9 节。
 3. 合成清单按 `{"selection": "web.s02"}` 引用。
 4. 用 `ntf sheet` 检查关键变化的时点，以及文字是否裁切或重叠。
