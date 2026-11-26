@@ -1,8 +1,10 @@
 """Actual media inspection and compressed JPEG review frames."""
 from __future__ import annotations
 import math
+import operator
 import re
 import json
+import statistics
 from pathlib import Path
 
 from .errors import NTFError
@@ -83,6 +85,48 @@ def _bright_share(source, at, stream):
     return round(sum(1 for v in pixels if v > 64) / len(pixels), 4) if pixels else None
 
 
+# 低运动：把画面缩成 64×36 灰度、每秒 10 帧，相邻两帧平均像素差（0–255）的 0.5 秒滑动中位数低于 1.2，且连续至少 1.5 秒。
+# 缩小加中位数后，字幕出现、标签切换这类一闪而过的变化不算运动；推拉、人物动作这类持续的变化量得出。剪点处断开。
+_PACE = {'fps': 10, 'width': 64, 'height': 36, 'level': 1.2, 'seconds': 1.5, 'cut_score': .3, 'cut_merge': .4}
+
+
+def _motion_pace(source, stream, duration):
+    """Low-motion intervals and shot lengths: a still picture with changing captions is not frozen, but it is not moving either."""
+    fps, w, h = _PACE['fps'], _PACE['width'], _PACE['height']
+    raw = run_media_command(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', str(source), '-map', f'0:{stream}',
+                             '-vf', f'fps={fps},scale={w}:{h}:flags=area,format=gray', '-f', 'rawvideo', '-'],
+                            timeout=900, text=False).stdout or b''
+    n = w * h
+    frames = [raw[i:i + n] for i in range(0, len(raw) - n + 1, n)]
+    diffs = [sum(map(abs, map(operator.sub, a, b))) / n for a, b in zip(frames, frames[1:])]
+    log = run_media_command(['ffmpeg', '-hide_banner', '-nostdin', '-i', str(source), '-map', f'0:{stream}', '-an',
+                             '-vf', f"scale=320:-2,select='gt(scene,{_PACE['cut_score']})',showinfo", '-f', 'null', '-'],
+                            timeout=900).stderr
+    cuts = []
+    for t in sorted(float(v) for v in re.findall(r'pts_time:' + _NUMBER, log)):
+        if 0 < t < duration and (not cuts or t - cuts[-1] > _PACE['cut_merge']):
+            cuts.append(round(t, 3))
+    # 运动要持续：取 0.5 秒滑动中位数，字幕出现、标签切换这类单帧跳变不算；静止区间在剪点处断开。
+    half = fps // 4
+    smooth = [statistics.median(diffs[max(0, i - half):i + half + 1]) for i in range(len(diffs))]
+    cut_frames = {round(c * fps) - 1 for c in cuts} | {round(c * fps) for c in cuts}
+    low = [d < _PACE['level'] and i not in cut_frames for i, d in enumerate(smooth)]
+    runs, start = [], None
+    for i, flag in enumerate(low + [False]):
+        if flag and start is None:
+            start = i
+        elif not flag and start is not None:
+            if (i - start) / fps >= _PACE['seconds']:
+                runs.append({'start_seconds': round(start / fps, 3), 'end_seconds': round(min(duration, i / fps), 3)})
+            start = None
+    edges = [0.0] + cuts + [duration]
+    shots = [b - a for a, b in zip(edges, edges[1:])]
+    pace = {'cuts': cuts, 'shot_count': len(shots), 'cuts_per_minute': round(len(cuts) / duration * 60, 1),
+            'median_shot_seconds': round(statistics.median(shots), 2), 'longest_shot_seconds': round(max(shots), 2),
+            'low_motion_share': round(sum(low) / len(low), 3) if low else None}
+    return runs, pace
+
+
 def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline=None, holds=None):
     """Report frozen, black and silent intervals as places worth looking at; never a pass/fail verdict."""
     holds = _parse_holds(holds)
@@ -115,12 +159,13 @@ def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline
                   for a, b in re.findall(r'black_start:' + _NUMBER + r' black_end:' + _NUMBER, log)],
         'silence': _scan_audio_pauses(log, duration, input_args, audio_map, filters) if audio_map else None,
     }
+    found['low_motion'], pace = _motion_pace(source, info.get('video_stream_index', 'V:0'), duration)
     for item in found['black']:
         share = _bright_share(source, (item['start_seconds'] + item['end_seconds']) / 2, info.get('video_stream_index', 'V:0'))
         item['bright_pixel_share'] = share
         item['has_content'] = bool(share and share >= .002)
     if holds:
-        for item in found['freeze']:   # freezedetect needs a few frames to notice a freeze: allow 0.35 s either side
+        for item in found['freeze'] + found['low_motion']:   # freezedetect needs a few frames to notice a freeze: allow 0.35 s either side
             item['intended'] = any(item['start_seconds'] >= a - .35 and item['end_seconds'] <= b + .35 for a, b in holds)
         found['holds'] = [{'start_seconds': a, 'end_seconds': b} for a, b in holds]
     if timeline:
@@ -131,7 +176,11 @@ def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline
             for item in items or []:
                 item['scene_ids'] = [sid for sid, (a, b) in windows.items()
                                      if a < item['end_seconds'] and b > item['start_seconds']]
+    found['pace'] = pace
     found['thresholds'] = {'freeze_seconds': freeze_seconds, 'black_seconds': .2,
+                           'low_motion_level': _PACE['level'], 'low_motion_seconds': _PACE['seconds'],
+                           'low_motion_frame': f"{_PACE['width']}x{_PACE['height']}@{_PACE['fps']}fps",
+                           'cut_scene_score': _PACE['cut_score'],
                            'silence_seconds': silence_seconds if info.get('has_audio') else None,
                            'silence_db': -35 if info.get('has_audio') else None,
                            'near_silence_db': -70 if info.get('has_audio') else None,

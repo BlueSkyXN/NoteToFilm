@@ -99,7 +99,7 @@ NoteToFilm 由三部分协作：Agent 做判断，Skill 提供方法，NoteToFil
 | `motion.py`、`motion_render.py` | `motion` | Pillow 绘制参数化图层与关键帧 |
 | `web_render.py` | `web-render` | Playwright 驱动 Chrome 或 Chromium，调用页面的 `render(t)` 逐帧截图 |
 | `synth.py` | `score` | 只用标准库合成乐器、音效与环境声；总线滤波、混音、母带与限幅交给 FFmpeg |
-| `sheet.py`、`compare.py`、`inspection.py` | `sheet`、`compare`、`inspect` | 按时间抽帧拼联系表；多画面并排、叠合与局部放大；探测、全量解码、冻结（可标有意停留）、黑场（区分全黑与深色有内容）与停顿检测（区分极低电平与全声道零样本）；倍频程平衡、重拍前凹陷与波形频谱图 |
+| `sheet.py`、`compare.py`、`inspection.py` | `sheet`、`compare`、`inspect` | 按时间抽帧拼联系表；多画面并排、叠合与局部放大；探测、全量解码、冻结与低运动（可标有意停留）、剪点与镜长、黑场（区分全黑与深色有内容）与停顿检测（区分极低电平与全声道零样本）；倍频程平衡、重拍前凹陷与波形频谱图 |
 | `loudness.py` | `normalize` | 双遍 loudnorm；复制第一条视频，只处理第一条音轨 |
 | `preview.py`、`review_server.py` | `preview`、`serve` | 导出审阅页；本地服务支持拖动进度 |
 | `config.py` | `routes`、`config-init` | 读取路由配置、连接来源 |
