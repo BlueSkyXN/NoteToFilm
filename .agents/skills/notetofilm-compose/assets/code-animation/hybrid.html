@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>视频片段加代码动画</title>
+<style>
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// 先声明未就绪：web-render 等到 READY === true 才开始逐帧截图。
+window.READY = false;
+import { start } from './hybrid.js';
+start().then(() => { window.READY = true; });
+</script>
+</body>
+</html>

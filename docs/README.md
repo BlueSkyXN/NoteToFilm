@@ -5,6 +5,7 @@
 | 我想…… | 读这里 |
 |---|---|
 | 了解 NoteToFilm、先跑起来、安装到客户端 | [仓库 README](../README.md) |
+| 从安装走到第一支能看的片子，再加入视频生成 | [入门](tutorial.md) |
 | 理解它怎么工作：Agent、Skill、`ntf` 的分工，项目从材料到成片的过程 | [工作原理](architecture.md) |
 | 接入自己的图像、视频网关 | [通道配置说明](company-protocols.md)，从开头的接入步骤开始 |
 | 查命令和参数 | [命令说明](../shared/commands.md)，或 `ntf <命令> --help` |

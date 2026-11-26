@@ -28,8 +28,9 @@ BROWSER_ARGS = ['--force-color-profile=srgb', '--font-render-hinting=none', '--h
                 '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader',
                 '--autoplay-policy=no-user-gesture-required'] + (['--use-angle=metal'] if sys.platform == 'darwin' else [])
 READY = "() => typeof window.render === 'function' && (!('READY' in window) || window.READY === true)"
-RENDER = "async t => { await window.render(t); }"
-RENDER_AND_COLLECT = "async t => { window.__ntfText.reset(); await window.render(t); return window.__ntfText.collect(); }"
+# render(t, frame)：frame.time 是这一帧的名义时刻，开 --subframes 时各子帧的 t 围绕它取样；页面按它选镜头，硬切处不混帧。
+RENDER = "async ([t, frame]) => { await window.render(t, frame); }"
+RENDER_AND_COLLECT = "async ([t, frame]) => { window.__ntfText.reset(); await window.render(t, frame); return window.__ntfText.collect(); }"
 TEXT_HOOK = Path(__file__).with_name('data') / 'text_hook.js'
 
 
@@ -181,6 +182,7 @@ class _Session:
             raise NTFError('web_browser_missing', '没有可用的无头浏览器；安装 Chromium（python -m playwright install chromium）或 Google Chrome。',
                            {'tried': tried})
         self.size = {'width': settings['width'], 'height': settings['height']}
+        self.fps = settings['fps']
         self.dpr = dpr
         self.init_script = TEXT_HOOK.read_text(encoding='utf-8') if text_check else None
         relative = page.relative_to(project.root.resolve()).as_posix()
@@ -211,10 +213,13 @@ class _Session:
         if self.errors:
             raise NTFError('web_page_error', '页面运行出错或缺少资源；修正后重试。', {'errors': self.errors[-6:]})
 
-    def frame(self, page, t):
-        page.evaluate(RENDER, t)
+    def frame(self, page, t, frame_time=None):
+        page.evaluate(RENDER, [t, self.frame_info(t if frame_time is None else frame_time)])
         self.check()
         return page.screenshot(type='png', clip={'x': 0, 'y': 0, **self.size}, caret='hide')
+
+    def frame_info(self, time):
+        return {'time': time, 'fps': self.fps}
 
     def close(self):
         for action in (lambda: self.browser and self.browser.close(), lambda: self.playwright.stop(),
@@ -264,7 +269,7 @@ def web_render(project, page, *, scene_id, duration=None, select=None, fps=None,
             stills, mismatched, text_report = [], [], []
             for t in preview_times:
                 if text_check:
-                    boxes = view.evaluate(RENDER_AND_COLLECT, t)
+                    boxes = view.evaluate(RENDER_AND_COLLECT, [t, session.frame_info(t)])
                     session.check()
                     image = view.screenshot(type='png', clip={'x': 0, 'y': 0, **session.size}, caret='hide')
                 else:
@@ -325,7 +330,7 @@ def web_render(project, page, *, scene_id, duration=None, select=None, fps=None,
                 t = index / fps_value
                 samples = [min(max(0.0, t + ((k + .5) / subframes - .5) * shutter / fps_value), window - 1e-6)
                            for k in range(subframes)] if subframes > 1 else [t]
-                encoder.stdin.write(_average([session.frame(view, sample) for sample in samples]))
+                encoder.stdin.write(_average([session.frame(view, sample, t) for sample in samples]))
             encoder.stdin.close()
             stderr = encoder.stderr.read().decode(errors='replace')
             if encoder.wait(timeout=600):
