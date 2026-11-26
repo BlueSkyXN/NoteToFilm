@@ -4,7 +4,7 @@
 
 NoteToFilm 目前有两种形态：**NoteToFilm CLI**（命令 `ntf`）加七个 Skill，是当前的开发重点；Web 工作台（`app/`，说明见 `WEB.md`）暂不维护。以后可能增加 Server 等形态，`ntf` 专指命令行形态。
 
-CLI 源码位于 `runtime/notetofilm_local/`（Python 包名沿用 `notetofilm-local`），七个 Skill 的唯一源码位于 `.agents/skills/`。CLI 版本为 **0.4.1**，制作项目 schema 保持 **1**。工作原理、网关接入、错误处理和开发说明见[文档索引](docs/README.md)。
+CLI 源码位于 `runtime/notetofilm_local/`（Python 包名沿用 `notetofilm-local`），七个 Skill 的唯一源码位于 `.agents/skills/`。CLI 版本为 **0.5.0**，制作项目 schema 保持 **1**。工作原理、网关接入、错误处理和开发说明见[文档索引](docs/README.md)。
 
 ## 从仓库运行
 
