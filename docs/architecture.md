@@ -7,7 +7,7 @@ NoteToFilm 由三部分协作：Agent 做判断，Skill 提供方法，NoteToFil
 | 层 | 位置 | 负责 | 不负责 |
 |---|---|---|---|
 | Agent | 用户使用的客户端（Codex、Claude Code 等） | 读材料、定叙事和画面、写分镜、挑素材、看联系表判断好坏 | 直接改写 `state.json` |
-| Skill | `.agents/skills/` 七个目录 | 告诉 Agent 每个阶段怎么判断、常见做法和取舍、什么时候用哪条命令 | 执行任何操作 |
+| Skill | `.agents/skills/` 七个目录 | 告诉 Agent 每个阶段怎么判断、常见做法和取舍、什么时候用哪条命令；附带少量只读媒体的诊断脚本，在 Agent 当前的 Python 里运行 | 写项目文件、调用模型通道 |
 | `ntf` | `runtime/notetofilm_local/` | 维护项目状态、调用模型通道、处理媒体、合成和导出审阅材料 | 判断内容是否合格 |
 
 `ntf` 给出能力和查看提示，例如 `inspect --scan` 标出冻结和静音、`web-render --text-check` 标出文字出界，是否合格由 Agent 依据设计判断。Skill 不设 hook 或强制门禁。

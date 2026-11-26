@@ -2,6 +2,12 @@
 
 CLI 与 Web 分别编号，版本号遵循语义化版本。
 
+## CLI · 未发布
+
+### Skill
+
+- compose：新增 `scripts/measure_motion.py`，用光流把画面运动分成镜头运动和画内运动，给出近乎静止的占比和区间，供和参考片对照。脚本在 Agent 当前的 Python 里运行，需要 OpenCV 和 NumPy，不进 CLI 的依赖和二进制；缺依赖时提示在独立环境安装 `opencv-python-headless`。交付检查新增“和参考片比节奏”：镜长和切换次数用 `inspect --scan` 的 `pace` 直接比，`low_motion` 只在自己的几版之间比。direct 的节奏起点指向这一节。
+
 ## CLI 0.5.0 · 2026-11-26
 
 ### 变更

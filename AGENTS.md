@@ -25,7 +25,7 @@ NoteToFilm 让 Agent 把故事或业务材料做成可以继续修改的视频�
 
 | 路径 | 职责 | 本地 AGENTS.md | 何时读 |
 |---|---|---:|---|
-| `.agents/skills/` | 七个 Skill 的唯一源码；`references/` 按需读取，`assets/` 是复制到备稿或项目的模板 | 否 | 改制作方法、设计指引、模板前读对应 `SKILL.md` 和 `docs/skill-layout.md` |
+| `.agents/skills/` | 七个 Skill 的唯一源码；`references/` 按需读取，`assets/` 是复制到备稿或项目的模板，`scripts/` 是在 Agent 当前 Python 里运行的只读诊断脚本 | 否 | 改制作方法、设计指引、模板前读对应 `SKILL.md` 和 `docs/skill-layout.md` |
 | `runtime/notetofilm_local/` | `ntf` 实现：项目状态、模型适配器、合成、动效、联系表、网页渲染 | 否 | 新增或修改命令、项目格式、媒体处理前 |
 | `shared/` | `runtime.md`、`project-format.md`、`commands.md` 三份公共说明的维护源 | 否 | 改命令说明或项目格式说明时 |
 | `scripts/` | 源码入口、安装、打包、同步、严格检查、二进制构建 | 否 | 改分发或验证流程前 |
