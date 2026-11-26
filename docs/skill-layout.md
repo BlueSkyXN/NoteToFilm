@@ -60,6 +60,7 @@ NoteToFilm/
 │   │   └── references/voice-and-subtitles.md
 │   └── notetofilm-compose/
 │       ├── assets/code-animation/  # 代码动画骨架：index.html、timing.js、motion.js、kit.js
+│       ├── scripts/measure_motion.py  # 和参考片对照的运动量测量（光流，需要 OpenCV）
 │       └── references/{timeline,manifest,motion,code-animation,code-recipes,motion-craft,toolbox,sound-mix,delivery}.md
 ├── shared/                       # 运行说明的维护源
 │   ├── runtime.md
@@ -95,6 +96,7 @@ NoteToFilm/
 - `direct/references/routes/`：不同画面来源与控制方式的制作方法。叙事结构和视觉语言由相应公共设计资料维护。
 - 媒体技能 `references/providers/`：已有独立篇幅的供应商协议、能力边界与验证范围。新增模型先判断能否沿用现有协议说明。
 - 技能 `assets/`：实际要复制到制作备稿或产物中的模板。音画表和风格配方是可选备稿，正式旁白仍以主分镜为准。导演的 `assets/shot-studies/` 放[因果草图](../.agents/skills/notetofilm-direct/references/shot-studies.md)的动图和可改写的 Pillow 制作源。
+- 技能 `scripts/`：Agent 在当前 Python 里运行的诊断脚本，只读媒体，不写项目，依赖不进 CLI。compose 的 `measure_motion.py` 需要 OpenCV，只在和参考片对照时用，缺依赖时先问用户。
 - `runtime/`：NoteToFilm CLI 的源码，可重复的制作能力通过 `ntf` 参数调用。技能说明引用命令；实现和行为测试在 CLI 中统一维护。
 - `shared/`：共同运行说明；业务材料、媒体、私有配置和本机路径留在源码外。
 
