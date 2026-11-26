@@ -57,7 +57,8 @@ class ReviewToolTests(unittest.TestCase):
 
         def log_without_filter_instances(*args, **kwargs):
             result = run_media_command(*args, **kwargs)
-            result.stderr = re.sub(r'\[silencedetect@\w+ @', '[silencedetect @', result.stderr)
+            if isinstance(result.stderr, str):   # 低运动扫描读原始帧，那一次是字节输出
+                result.stderr = re.sub(r'\[silencedetect@\w+ @', '[silencedetect @', result.stderr)
             return result
 
         # Reproduce the FFmpeg 6 log format on newer builds as well.

@@ -28,7 +28,7 @@
 | 制作参数化动效素材 | `ntf motion PROJECT --manifest FILE [--scene ID]` |
 | 动效预检与压缩预览 | `ntf motion PROJECT --manifest FILE --plan-only` / `--preview-only --preview-time SECONDS` |
 | 探测媒体、完整解码与JPEG抽帧 | `ntf inspect FILE --decode --frames 3 --output DIR --max-width 960` |
-| 标出冻结、黑场和静音区间 | `ntf inspect FILE --scan [--timeline TIMELINE] [--hold 16.5-20]` |
+| 标出冻结、低运动、黑场和静音区间，统计剪点与镜长 | `ntf inspect FILE --scan [--timeline TIMELINE] [--hold 16.5-20]` |
 | 看声音：频段平衡、重拍前的呼吸、波形与频谱图 | `ntf inspect FILE --audio-check [--drop 15 --beat-seconds 0.5] --output DIR` |
 | 按时间看视频的联系表 | `ntf sheet FILE --output DIR [--timeline TIMELINE] [--fps 2]` |
 | 多个视频同时刻并排、候选图宫格 | `ntf compare A.mp4 B.mp4 --at 3 --at 9 --output DIR` / `ntf compare a.png b.png c.png --output DIR` |
@@ -83,7 +83,7 @@ PROJECT 与文件参数都传具体路径。动作 ID 从计划或 `ready` 结�
 
 `web-render` 打开项目内提供 `window.render(t)` 的页面，按项目画幅和帧率逐帧截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）；时长默认读页面的 `window.DUR`。需要异步加载的入口应先同步设置 `window.READY = false`，再提供 `window.render`，资源就绪后设置为 `true`。入口未声明 READY 时，提供 render 即可截图。`--preview-time` 可重复，只输出静帧，并按另一种渲染顺序比对画面是否只由时间决定；加 `--text-check` 时报告文字出界、重叠和过小并输出标注图，`counts` 按类型计数；整段落在画外的字不报，页面把上下文的 `ntfDecorative` 设为 true 期间画的字不记录（骨架 `kit.js` 的 `decorative()`）。渲染可加 `--dpr`（超采样，1–3）、`--subframes`（子帧运动模糊，1–8，`--shutter` 调快门比例）和 `--grain`（编码时叠加颗粒，0–40）。页面目录内容与参数不变时复用已有素材，`--force` 另生成新版本。需要 Playwright（web 可选依赖）和 Chromium 或本机 Chrome；页面写法在 compose Skill 的代码动画说明。
 
-`inspect --scan` 报告冻结（默认至少 1 秒，可用 `--freeze-seconds` 调整）、黑场和低电平停顿（低于 −35 dBFS，默认至少 0.5 秒，可用 `--silence-seconds` 调整）。加 `--timeline` 可定位镜头。每段停顿的 `near_silence_seconds` 累计连续至少 0.2 秒低于 −70 dBFS 的时间，`digital_silence_seconds` 累计解码后所有声道连续至少 1 毫秒样本为零的时间。按区间复听，结合设计判断停顿是否自然。`--hold START-END` 可重复，声明有意停留（落版、读字、静态证据），落在其中（前后放宽 0.35 秒）的冻结标 `intended: true`。黑场区间附 `bright_pixel_share`（中间一帧亮度超过 25% 的像素占比）和 `has_content`：深色底上有字或图形时为 true，看原帧判断，不必为此改底色。
+`inspect --scan` 报告冻结（默认至少 1 秒，可用 `--freeze-seconds` 调整）、黑场和低电平停顿（低于 −35 dBFS，默认至少 0.5 秒，可用 `--silence-seconds` 调整）。`low_motion` 列出画面几乎不动的区间：画面缩到 64×36 灰度、每秒 10 帧，相邻两帧平均像素差的 0.5 秒滑动中位数低于 1.2（0–255）、连续至少 1.5 秒，剪点处断开；字幕和标签在变、人物和镜头不动时，冻结扫描不报，这里会报。`pace` 给出剪点时刻（场景变化分数高于 0.3，0.4 秒内的并为一次）、镜头数、每分钟切换次数、中位镜长、最长镜头和低运动占比。加 `--timeline` 可定位镜头。每段停顿的 `near_silence_seconds` 累计连续至少 0.2 秒低于 −70 dBFS 的时间，`digital_silence_seconds` 累计解码后所有声道连续至少 1 毫秒样本为零的时间。按区间复听，结合设计判断停顿是否自然。`--hold START-END` 可重复，声明有意停留（落版、读字、静态证据），落在其中（前后放宽 0.35 秒）的冻结和低运动区间标 `intended: true`。黑场区间附 `bright_pixel_share`（中间一帧亮度超过 25% 的像素占比）和 `has_content`：深色底上有字或图形时为 true，看原帧判断，不必为此改底色。
 
 `inspect --audio-check` 另给 `audio_balance`：各倍频程能量相对 1 kHz 的分贝数（粉红噪声约为 0），低频（31–125 Hz）和高频（4–8 kHz）偏离常见范围时在 `notes` 里提示。`--drop SECONDS` 可重复，按 `--beat-seconds`（默认 0.5）量重拍前最后半拍比前一小节低多少、重拍比前一小节高多少，写进 `audio_drops`；半拍凹陷不到 4 dB 或重拍没有更响时提示。带 `--output` 时写出 `audio_wave.png`、`audio_spectrum.png`。这些是看不到听感时的线索，不进入 verification。
 

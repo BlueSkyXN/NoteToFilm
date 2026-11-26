@@ -127,6 +127,32 @@ class ScanTests(unittest.TestCase):
         self.assertAlmostEqual(scan['silence'][0]['end_seconds'], 3, delta=.15)
         self.assertIsNone(result['verification']['passed'])
 
+    def test_low_motion_reports_still_picture_under_changing_caption(self):
+        """字幕条一直在闪，冻结扫描不报；画面本身没动，低运动区间要报出来，剪点后持续运动的画面不算。"""
+        still, moving, movie = self.root / 'still.mp4', self.root / 'moving.mp4', self.root / 'film.mp4'
+        ffmpeg('-f', 'lavfi', '-i', 'color=c=gray:s=160x90:r=10:d=3',
+               '-vf', "drawbox=x=40:y=70:w=60:h=6:color=white:t=fill:enable='lt(mod(t\\,0.6)\\,0.3)'",
+               '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(still))
+        ffmpeg('-f', 'lavfi', '-i', 'testsrc2=s=160x90:r=10:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(moving))
+        ffmpeg('-i', str(still), '-i', str(moving), '-filter_complex', '[0][1]concat=n=2:v=1[v]', '-map', '[v]',
+               '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(movie))
+        scan = inspect_media(movie, scan=True, holds=['0-3'])['scan']
+        self.assertEqual(scan['freeze'], [])
+        self.assertEqual(len(scan['low_motion']), 1)
+        item = scan['low_motion'][0]
+        self.assertLessEqual(item['start_seconds'], .3)
+        self.assertGreaterEqual(item['end_seconds'], 2.5)
+        self.assertLessEqual(item['end_seconds'], 3.05)
+        self.assertTrue(item['intended'])
+        pace = scan['pace']
+        self.assertEqual(len(pace['cuts']), 1)
+        self.assertAlmostEqual(pace['cuts'][0], 3, delta=.15)
+        self.assertEqual(pace['shot_count'], 2)
+        self.assertAlmostEqual(pace['longest_shot_seconds'], 3, delta=.15)
+        self.assertGreater(pace['low_motion_share'], .4)
+        self.assertLess(pace['low_motion_share'], .75)
+        self.assertEqual(scan['thresholds']['low_motion_seconds'], 1.5)
+
     def test_scan_without_audio(self):
         movie = self.root / 'silent.mp4'
         ffmpeg('-f', 'lavfi', '-i', 'testsrc=s=160x90:r=10:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(movie))
