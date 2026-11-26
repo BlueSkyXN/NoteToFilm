@@ -3,4 +3,4 @@
 The Python package keeps the distribution name notetofilm-local for installer compatibility.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
