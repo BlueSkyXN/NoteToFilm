@@ -94,10 +94,11 @@ NoteToFilm 由三部分协作：Agent 做判断，Skill 提供方法，NoteToFil
 
 | 模块 | 命令 | 做法 |
 |---|---|---|
-| `compose.py`、`timing.py` | `compose`、`timing` | FFmpeg 拼接图片与视频、裁切变速、转场、混音；H.264（CRF 20）＋ AAC |
+| `compose.py`、`timing.py` | `compose`、`timing` | FFmpeg 拼接图片与视频、裁切变速、转场、混音；H.264（CRF 20）＋ AAC；按实测配音定片长，并给代码动画导出镜头窗口与逐词时间（`timing --js`） |
 | `text_overlay.py` | `compose` 的字幕与配字 | FFmpeg subtitles 滤镜或 Pillow 逐帧绘制；也可内封为字幕轨 |
 | `motion.py`、`motion_render.py` | `motion` | Pillow 绘制参数化图层与关键帧 |
-| `web_render.py` | `web-render` | Playwright 驱动 Chrome 或 Chromium，调用页面的 `render(t)` 逐帧截图 |
+| `web_render.py` | `web-render` | Playwright 驱动 Chrome 或 Chromium，调用页面的 `render(t, frame)` 逐帧截图；`frame.time` 是名义帧时刻，开子帧时页面据此选镜头 |
+| `frames.py` | `frames` | 把采用的视频片段抽成 `000.jpg` 起编号的帧序列，供代码动画页面按需取帧 |
 | `synth.py` | `score` | 只用标准库合成乐器、音效与环境声；总线滤波、混音、母带与限幅交给 FFmpeg |
 | `sheet.py`、`compare.py`、`inspection.py` | `sheet`、`compare`、`inspect` | 按时间抽帧拼联系表；多画面并排、叠合与局部放大；探测、全量解码、冻结与低运动（可标有意停留）、剪点与镜长、黑场（区分全黑与深色有内容）与停顿检测（区分极低电平与全声道零样本）；倍频程平衡、重拍前凹陷与波形频谱图 |
 | `loudness.py` | `normalize` | 双遍 loudnorm；复制第一条视频，只处理第一条音轨 |

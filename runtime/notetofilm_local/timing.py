@@ -1,8 +1,11 @@
 """Narration estimates and measured, explicitly applied shot timing."""
 from __future__ import annotations
 import copy
+import json
 import math
+import os
 import re
+import tempfile
 
 from .errors import NTFError
 from .media import probe
@@ -115,3 +118,57 @@ def narration_timing(project, *, mode='measured', scene_ids=None, tail_seconds=.
         project.put_storyboard(board)
     return {'mode':mode,'applied':apply,'scenes':rows,'plan_refresh_required':apply,
             'planned_total_seconds':board.get('planned_total_seconds') if apply else None}
+
+
+_TIMING_JS_HELPERS = """export const DUR = TL.dur;
+export const SC = Object.fromEntries(TL.scenes.map(s => [s.id, s]));
+/** 某镜第 n 次说到 word 的绝对时刻（秒）。词边界缺失的镜头用 SC[id].voice 或 SC[id].start 加秒数。 */
+export function W(id, word, n = 1) {
+  const hits = (SC[id]?.words || []).filter(w => w[0] === word);
+  if (hits.length < n) throw new Error(`${id} 里没有第 ${n} 个“${word}”`);
+  return hits[n - 1][1];
+}
+"""
+
+
+def export_timing_js(project, output):
+    """Write a timing module for code-animation pages: scene windows from the storyboard and word times from the
+    adopted narration's word boundaries, all in seconds from the start of the film."""
+    board = project.storyboard
+    scenes = board.get('scenes', [])
+    if not scenes or any(not isinstance(s.get('planned_window'), dict) for s in scenes):
+        raise NTFError('timing_windows_missing', '导出 timing.js 需要每镜的 planned_window：先运行 ntf timing PROJECT --apply。')
+    target = project.path(output)
+    if target.suffix != '.js':
+        raise NTFError('timing_parameters', '--js 写到项目内的 .js 文件，例如 animation/film/timing.js。')
+    rows, without_words = [], []
+    for scene in scenes:
+        sid, window = scene['id'], scene['planned_window']
+        start, end = float(window['start']), float(window['end'])
+        row = {'id': sid, 'start': round(start, 3), 'dur': round(end - start, 3), 'voice': None, 'words': []}
+        lead = (scene.get('audio') or {}).get('start_seconds', scene.get('narration_start_seconds', 0))
+        try:
+            ref = project.resolve(scene.get('audio') or {'selection': f'{sid}.audio'})
+        except NTFError:
+            ref = None
+        if ref is not None:
+            row['voice'] = round(start + lead, 3)
+            path = ref.get('boundaries_path')
+            words = json.loads(project.path(path).read_text(encoding='utf-8')) if path else []
+            row['words'] = [[w['text'], round(start + lead + w['offset'] / 1e7, 3)]
+                            for w in words if isinstance(w, dict) and 'text' in w and 'offset' in w]
+            if not row['words']:
+                without_words.append(sid)
+        rows.append(row)
+    total = board.get('planned_total_seconds') or max(r['start'] + r['dur'] for r in rows)
+    timeline = {'dur': round(float(total), 3), 'scenes': rows}
+    text = ('// 由 ntf timing PROJECT --js 生成：镜头窗口取自正式分镜，逐词时间取自所采用配音的词边界（秒，从片头算起）。\n'
+            '// 改旁白或重新 --apply 后重新导出，不手改。\n'
+            f'export const TL = {json.dumps(timeline, ensure_ascii=False)};\n' + _TIMING_JS_HELPERS)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle, temp = tempfile.mkstemp(prefix='.timing-', suffix='.js', dir=target.parent)
+    with os.fdopen(handle, 'w', encoding='utf-8') as fh:
+        fh.write(text)
+    os.replace(temp, target)
+    return {'path': target.relative_to(project.root).as_posix(), 'duration_seconds': timeline['dur'],
+            'scenes': len(rows), 'words': sum(len(r['words']) for r in rows), 'scenes_without_words': without_words}

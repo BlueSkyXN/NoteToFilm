@@ -152,6 +152,11 @@ class ScanTests(unittest.TestCase):
         self.assertGreater(pace['low_motion_share'], .4)
         self.assertLess(pace['low_motion_share'], .75)
         self.assertEqual(scan['thresholds']['low_motion_seconds'], 1.5)
+        longer = inspect_media(movie, scan=True, low_motion_seconds=3.5)['scan']   # 3 秒的静止短于放宽后的门槛
+        self.assertEqual(longer['low_motion'], [])
+        self.assertEqual(longer['thresholds']['low_motion_seconds'], 3.5)
+        with self.assertRaises(NTFError):
+            inspect_media(movie, scan=True, low_motion_level=0)
 
     def test_scan_without_audio(self):
         movie = self.root / 'silent.mp4'

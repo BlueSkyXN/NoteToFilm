@@ -161,6 +161,7 @@ def parser():
     timing.add_argument("--units-per-second", type=float, help="Override the estimate speed; by default about 4.6 units/s scaled by the narration rate")
     timing.add_argument("--preserve-planned", action="store_true")
     timing.add_argument("--apply", action="store_true", help="Write measured durations and windows to the storyboard; re-plan afterwards")
+    timing.add_argument("--js", help="项目内的 .js 文件：导出镜头窗口与逐词时间，供代码动画页面使用（需要先 --apply）")
     inspect = commands.add_parser("inspect", help="Probe actual media, optionally fully decode and export small JPEG frames")
     inspect.add_argument("file")
     inspect.add_argument("--decode", action="store_true")
@@ -180,15 +181,27 @@ def parser():
     inspect.add_argument('--max-peak-dbfs', type=float, default=-.1)
     inspect.add_argument('--expect-loudness-lufs', type=float)
     inspect.add_argument('--loudness-tolerance', type=float, default=1)
-    inspect.add_argument('--scan', action='store_true', help='标出冻结、黑场和静音区间，供定位查看')
+    inspect.add_argument('--scan', action='store_true', help='标出冻结、低运动、黑场和静音区间，统计剪点与镜长，供定位查看')
     inspect.add_argument('--freeze-seconds', type=float, default=1.0)
     inspect.add_argument('--silence-seconds', type=float, default=.5)
+    inspect.add_argument('--low-motion-seconds', type=float, default=1.5, help='低运动区间的最短秒数，默认 1.5；安静的观察片可放宽')
+    inspect.add_argument('--low-motion-level', type=float, default=1.2, help='低运动阈值（缩小灰度画面的平均帧差，0–255），默认 1.2')
     inspect.add_argument('--timeline', help='合成时间表；--scan 结果据此标注镜头 ID')
     inspect.add_argument('--hold', action='append', dest='holds', metavar='START-END',
-                         help='有意停留的区间（秒），落在其中的冻结标为 intended；可重复，与 --scan 一起用')
+                         help='有意停留的区间（秒），落在其中的冻结和低运动区间标为 intended；可重复，与 --scan 一起用')
     inspect.add_argument('--drop', action='append', type=float, dest='drops', metavar='SECONDS',
                          help='重拍时刻：量重拍前半拍的凹陷和重拍的抬升；可重复，与 --audio-check 一起用')
     inspect.add_argument('--beat-seconds', type=float, default=.5, help='一拍的秒数，--drop 用它划窗口，默认 0.5')
+    frames = commands.add_parser('frames', help='把采用的视频片段抽成代码动画页面读取的帧序列')
+    frames.add_argument('project')
+    frames.add_argument('--select', help='视频的采用位，例如 s05.video')
+    frames.add_argument('--asset', dest='asset_id', help='素材 ID（采用位对应多个素材时用）')
+    frames.add_argument('--output', required=True, help='项目内的空目录，例如 animation/film/media/s05')
+    frames.add_argument('--fps', type=float, default=24.0, help='抽帧帧率，默认 24（与常见生成视频一致）')
+    frames.add_argument('--width', type=int, help='帧宽，默认项目画幅')
+    frames.add_argument('--height', type=int, help='帧高，默认项目画幅')
+    frames.add_argument('--jpeg-quality', type=int, default=3, help='JPEG 质量 2–31，越小越好，默认 3')
+    frames.add_argument('--force', action='store_true', help='目录已有帧时用新素材替换')
     sheet = commands.add_parser('sheet', help='按时间抽帧生成带时间与镜头标注的联系表')
     sheet.add_argument('file')
     sheet.add_argument('--output', required=True)
@@ -285,7 +298,8 @@ def dispatch(args):
                              audio_check=args.audio_check, min_mean_dbfs=args.min_mean_dbfs, max_peak_dbfs=args.max_peak_dbfs,
                              expected_loudness_lufs=args.expect_loudness_lufs, loudness_tolerance=args.loudness_tolerance,
                              scan=args.scan, freeze_seconds=args.freeze_seconds, silence_seconds=args.silence_seconds,
-                             timeline=args.timeline, holds=args.holds, drops=args.drops, beat_seconds=args.beat_seconds)
+                             timeline=args.timeline, holds=args.holds, drops=args.drops, beat_seconds=args.beat_seconds,
+                             low_motion_seconds=args.low_motion_seconds, low_motion_level=args.low_motion_level)
     if args.command == 'compare':
         from .compare import compare_board
         return compare_board(args.inputs, output=args.output, at=args.at, overlay=args.overlay, crop=args.crop,
@@ -350,6 +364,10 @@ def dispatch(args):
     project = Project(args.project)
     if args.command == "import":
         return project.import_asset(args.file, args.kind, args.select)
+    if args.command == 'frames':
+        from .frames import extract_frames
+        return extract_frames(project, select=args.select, asset_id=args.asset_id, output=args.output, fps=args.fps,
+                              width=args.width, height=args.height, jpeg_quality=args.jpeg_quality, force=args.force)
     if args.command == "storyboard":
         return project.put_storyboard(read_json(args.file))
     if args.command == "settings":
@@ -459,11 +477,15 @@ def dispatch(args):
         return score_project(project, args.file, select=args.select, duration=args.duration, stems=args.stems, force=args.force)
     if args.command == "timing":
         from .timing import narration_timing
-        return narration_timing(project, mode=args.mode, scene_ids=args.scene_ids,
+        result = narration_timing(project, mode=args.mode, scene_ids=args.scene_ids,
                                 tail_seconds=args.tail_seconds, lead_seconds=args.lead_seconds,
                                 min_seconds=args.min_seconds, max_seconds=args.max_seconds,
                                 units_per_second=args.units_per_second,
                                 preserve_planned=args.preserve_planned, apply=args.apply)
+        if args.js:
+            from .timing import export_timing_js
+            result['timing_js'] = export_timing_js(project, args.js)
+        return result
     if args.command == "preview":
         from .preview import export_preview
         return export_preview(project, output=args.output, video=args.video, render_id=args.render,

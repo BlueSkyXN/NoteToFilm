@@ -28,6 +28,20 @@ class WebRenderEntryTests(unittest.TestCase):
             finally:
                 session.close()
 
+    def test_render_receives_the_nominal_frame_time(self):
+        api = mock.MagicMock()
+        with mock.patch.dict(sys.modules, {'playwright.sync_api': api}):
+            session = web_render._Session(self.project, self.page_dir / 'index.html',
+                                          {'width': 160, 'height': 90, 'fps': 10}, 1, 1)
+            try:
+                view = session.open()
+                session.frame(view, 1.0125, 1.0)   # 子帧围绕 1.0 秒取样
+                view.evaluate.assert_called_with(web_render.RENDER, [1.0125, {'time': 1.0, 'fps': 10}])
+                session.frame(view, .5)
+                view.evaluate.assert_called_with(web_render.RENDER, [.5, {'time': .5, 'fps': 10}])
+            finally:
+                session.close()
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix='ntf-web-')
         self.addCleanup(temp.cleanup)

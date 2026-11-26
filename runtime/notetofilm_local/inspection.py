@@ -90,9 +90,11 @@ def _bright_share(source, at, stream):
 _PACE = {'fps': 10, 'width': 64, 'height': 36, 'level': 1.2, 'seconds': 1.5, 'cut_score': .3, 'cut_merge': .4}
 
 
-def _motion_pace(source, stream, duration):
+def _motion_pace(source, stream, duration, level=None, seconds=None):
     """Low-motion intervals and shot lengths: a still picture with changing captions is not frozen, but it is not moving either."""
     fps, w, h = _PACE['fps'], _PACE['width'], _PACE['height']
+    level = _PACE['level'] if level is None else level
+    seconds = _PACE['seconds'] if seconds is None else seconds
     raw = run_media_command(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', str(source), '-map', f'0:{stream}',
                              '-vf', f'fps={fps},scale={w}:{h}:flags=area,format=gray', '-f', 'rawvideo', '-'],
                             timeout=900, text=False).stdout or b''
@@ -110,13 +112,13 @@ def _motion_pace(source, stream, duration):
     half = fps // 4
     smooth = [statistics.median(diffs[max(0, i - half):i + half + 1]) for i in range(len(diffs))]
     cut_frames = {round(c * fps) - 1 for c in cuts} | {round(c * fps) for c in cuts}
-    low = [d < _PACE['level'] and i not in cut_frames for i, d in enumerate(smooth)]
+    low = [d < level and i not in cut_frames for i, d in enumerate(smooth)]
     runs, start = [], None
     for i, flag in enumerate(low + [False]):
         if flag and start is None:
             start = i
         elif not flag and start is not None:
-            if (i - start) / fps >= _PACE['seconds']:
+            if (i - start) / fps >= seconds:
                 runs.append({'start_seconds': round(start / fps, 3), 'end_seconds': round(min(duration, i / fps), 3)})
             start = None
     edges = [0.0] + cuts + [duration]
@@ -127,13 +129,14 @@ def _motion_pace(source, stream, duration):
     return runs, pace
 
 
-def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline=None, holds=None):
+def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline=None, holds=None,
+               low_motion_seconds=1.5, low_motion_level=1.2):
     """Report frozen, black and silent intervals as places worth looking at; never a pass/fail verdict."""
     holds = _parse_holds(holds)
     if info['kind'] != 'video' or not info.get('duration_seconds'):
         raise NTFError('inspect_parameters', '--scan 只处理可测得时长的视频。')
-    if any(not math.isfinite(v) or v <= 0 for v in (freeze_seconds, silence_seconds)):
-        raise NTFError('inspect_parameters', '冻结与静音的最短时长须为正数。')
+    if any(not math.isfinite(v) or v <= 0 for v in (freeze_seconds, silence_seconds, low_motion_seconds, low_motion_level)):
+        raise NTFError('inspect_parameters', '冻结、静音、低运动的最短时长和低运动阈值须为正数。')
     duration = info['duration_seconds']
     input_args = ['ffmpeg', '-hide_banner', '-nostdin', '-i', str(source)]
     args = input_args + ['-vf', f'freezedetect=n=-60dB:d={freeze_seconds:g},blackdetect=d=0.2:pix_th=0.10',
@@ -159,7 +162,8 @@ def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline
                   for a, b in re.findall(r'black_start:' + _NUMBER + r' black_end:' + _NUMBER, log)],
         'silence': _scan_audio_pauses(log, duration, input_args, audio_map, filters) if audio_map else None,
     }
-    found['low_motion'], pace = _motion_pace(source, info.get('video_stream_index', 'V:0'), duration)
+    found['low_motion'], pace = _motion_pace(source, info.get('video_stream_index', 'V:0'), duration,
+                                             low_motion_level, low_motion_seconds)
     for item in found['black']:
         share = _bright_share(source, (item['start_seconds'] + item['end_seconds']) / 2, info.get('video_stream_index', 'V:0'))
         item['bright_pixel_share'] = share
@@ -178,7 +182,7 @@ def scan_media(source, info, *, freeze_seconds=1.0, silence_seconds=.5, timeline
                                      if a < item['end_seconds'] and b > item['start_seconds']]
     found['pace'] = pace
     found['thresholds'] = {'freeze_seconds': freeze_seconds, 'black_seconds': .2,
-                           'low_motion_level': _PACE['level'], 'low_motion_seconds': _PACE['seconds'],
+                           'low_motion_level': low_motion_level, 'low_motion_seconds': low_motion_seconds,
                            'low_motion_frame': f"{_PACE['width']}x{_PACE['height']}@{_PACE['fps']}fps",
                            'cut_scene_score': _PACE['cut_score'],
                            'silence_seconds': silence_seconds if info.get('has_audio') else None,
@@ -261,6 +265,7 @@ def inspect_media(source, *, decode=False, output=None, frames=3, max_width=960,
                   expect_audio=None, audio_check=False, min_mean_dbfs=-60, max_peak_dbfs=-.1,
                   expected_loudness_lufs=None, loudness_tolerance=1,
                   scan=False, freeze_seconds=1.0, silence_seconds=.5, timeline=None, holds=None,
+                  low_motion_seconds=1.5, low_motion_level=1.2,
                   drops=None, beat_seconds=.5):
     source = Path(source).expanduser().resolve()
     if frames < 1 or frames > 30 or max_width < 16 or max_width > 4096 or not 1<=jpeg_quality<=95:
@@ -334,7 +339,8 @@ def inspect_media(source, *, decode=False, output=None, frames=3, max_width=960,
                     result['audio_drops'] = _audio_drops(source, info.get('duration_seconds'), drops, beat_seconds)
     if scan:
         result['scan'] = scan_media(source, info, freeze_seconds=freeze_seconds,
-                                    silence_seconds=silence_seconds, timeline=timeline, holds=holds)
+                                    silence_seconds=silence_seconds, timeline=timeline, holds=holds,
+                                    low_motion_seconds=low_motion_seconds, low_motion_level=low_motion_level)
     result['verification'] = {'passed':all(c['passed'] for c in checks) if checks else None,'checks':checks}
     if output is None:
         return result
