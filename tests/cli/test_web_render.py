@@ -1,6 +1,9 @@
 """网页动画渲染的入口检查；真实浏览器渲染另行验证，这里不依赖 Playwright。"""
 import io
+import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,7 +12,7 @@ from unittest import mock
 from notetofilm_local.errors import NTFError
 from notetofilm_local.project import init_project
 from notetofilm_local import web_render
-from notetofilm_local.web_render import PageHandler, TEXT_HOOK, _difference, _fingerprint, _page, analyze_text
+from notetofilm_local.web_render import PageHandler, TEXT_HOOK, _difference, _fingerprint, _merge_spans, _page, analyze_text
 
 ROOT = Path(__file__).resolve().parents[2]
 STARTER = ROOT / '.agents/skills/notetofilm-compose/assets/code-animation'
@@ -56,6 +59,20 @@ class WebRenderEntryTests(unittest.TestCase):
             web_render.web_render(self.project, **kwargs)
         return error.exception.code
 
+    def test_page_failure_while_drawing_a_frame_names_the_time(self):
+        api = mock.MagicMock()
+        with mock.patch.dict(sys.modules, {'playwright.sync_api': api}):
+            session = web_render._Session(self.project, self.page_dir / 'index.html',
+                                          {'width': 160, 'height': 90, 'fps': 10}, 1, 1)
+            try:
+                view = session.open()
+                view.evaluate.side_effect = RuntimeError('Page.evaluate: Event')
+                with self.assertRaises(NTFError) as error:
+                    session.frame(view, 2.5)
+            finally:
+                session.close()
+        self.assertEqual((error.exception.code, error.exception.details['time_seconds']), ('web_page_error', 2.5))
+
     def test_page_must_live_inside_project(self):
         outside = self.root / 'outside.html'
         outside.write_text('<p>x</p>')
@@ -80,6 +97,138 @@ class WebRenderEntryTests(unittest.TestCase):
                 with self.subTest(options=options):
                     self.assertEqual(self.code(page='animation/s01', scene_id='s01', duration=1, **options), 'web_render_parameters')
             session.assert_not_called()
+
+    def test_scan_and_range_options_are_checked_before_starting_a_browser(self):
+        with mock.patch.object(web_render, '_Session') as session:
+            for options in ({'text_scan': 0}, {'text_scan': 20}, {'text_scan': True},
+                            {'text_scan': .25, 'preview_times': [1]}, {'time_range': '5'}, {'time_range': '4-2'},
+                            {'time_range': '1-2', 'preview_times': [1]}, {'time_range': '1-2', 'grain': 8}):
+                with self.subTest(options=options):
+                    self.assertEqual(self.code(page='animation/s01', scene_id='s01', duration=3, **options), 'web_render_parameters')
+            session.assert_not_called()
+
+    def test_scan_spans_merge_consecutive_samples(self):
+        hits = {('CUT', 'title'): [[1.0, [0, 0, 1, 1], 'a.png'], [1.25, [0, 0, 1, 1], None], [1.5, [0, 0, 1, 1], None],
+                                   [4.0, [0, 0, 1, 1], 'b.png']],
+                ('TINY', 'note'): [[2.0, [0, 0, 1, 1], None]]}
+        spans = _merge_spans(hits, .25)
+        self.assertEqual([(s['type'], s['start_seconds'], s['end_seconds'], s['samples']) for s in spans],
+                         [('CUT', 1.0, 1.5, 3), ('TINY', 2.0, 2.0, 1), ('CUT', 4.0, 4.0, 1)])
+        self.assertEqual((spans[0]['marked_path'], spans[2]['marked_path']), ('a.png', 'b.png'))
+
+    def fake_session(self, png_for_time=None, boxes_for_time=None, duration=2.0):
+        test = self
+
+        class View:
+            def evaluate(self, script, args=None):
+                if 'window.DUR' in script:
+                    return duration
+                self.t = args[0]
+                return boxes_for_time(args[0]) if boxes_for_time else []
+
+            def screenshot(self, **_):
+                return png_for_time(getattr(self, 't', 0))
+
+            def close(self):
+                pass
+
+        class Session:
+            def __init__(self, project, page, settings, duration, dpr=1, text_check=False):
+                self.size = {'width': settings['width'], 'height': settings['height']}
+                self.fps = settings['fps']
+                self.engine = 'fake'
+                test.text_check = text_check
+
+            def open(self):
+                return View()
+
+            def check(self):
+                pass
+
+            def frame_info(self, t):
+                return {'time': t, 'fps': self.fps}
+
+            def evaluate(self, view, script, t, frame_time=None):
+                return view.evaluate(script, [t, self.frame_info(t if frame_time is None else frame_time)])
+
+            def frame(self, view, t, frame_time=None):
+                view.t = t
+                return png_for_time(t)
+
+            def close(self):
+                pass
+        return Session
+
+    @staticmethod
+    def png(color, size=(160, 90)):
+        from PIL import Image
+        buffer = io.BytesIO()
+        Image.new('RGB', size, color).save(buffer, 'PNG')
+        return buffer.getvalue()
+
+    def test_text_scan_reports_spans_over_the_film(self):
+        box = {'text': 'edge', 'x0': -20, 'y0': 10, 'x1': 60, 'y1': 30, 'size': 5, 'alpha': 1}
+        session = self.fake_session(png_for_time=lambda t: self.png((200, 200, 200)),
+                                    boxes_for_time=lambda t: [box] if .5 <= t < 1.0 else [])
+        with mock.patch.object(web_render, '_Session', session):
+            result = web_render.web_render(self.project, 'animation/s01', scene_id='s01', text_scan=.25, width=160, height=90, fps=10)
+        self.assertTrue(self.text_check)
+        self.assertEqual((result['status'], result['samples'], result['counts']), ('text_scanned', 8, {'CUT': 1}))
+        span = result['spans'][0]
+        self.assertEqual((span['text'], span['start_seconds'], span['end_seconds'], span['samples']), ('edge', .5, .75, 2))
+        self.assertTrue((self.project.root / span['marked_path']).is_file())
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
+    def test_range_rerenders_only_those_frames_into_the_adopted_video(self):
+        output = {'width': 160, 'height': 90, 'fps': 10}
+        source = self.root / 'base.mp4'
+        subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=160x90:r=10:d=2',
+                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(source)], check=True)
+        session = self.fake_session(png_for_time=lambda t: self.png((250, 30, 30)))
+        with mock.patch.object(web_render, '_Session', session):
+            with self.assertRaises(NTFError) as error:
+                web_render.web_render(self.project, 'animation/s01', scene_id='s01', time_range='0.5-1', **output)
+            self.assertEqual(error.exception.code, 'web_patch_base')
+            target = self.project.root / 'assets/videos/base.mp4'
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(source, target)
+            base = self.project.register_file(target, 'video', {'type': 'web', 'scene_id': 's01', 'page': 'animation/s01/index.html'}, 'web.s01')
+            result = web_render.web_render(self.project, 'animation/s01', scene_id='s01', time_range='0.5-1', **output)
+        self.assertEqual((result['status'], result['frames_rendered'], result['base_asset_id']), ('patched', 5, base['id']))
+        state = json.loads((self.project.root / 'state.json').read_text())
+        self.assertEqual(state['selection']['web.s01'], result['asset_id'])
+
+        def red_share(at):
+            raw = subprocess.run(['ffmpeg', '-v', 'error', '-ss', str(at), '-i', str(self.project.root / result['path']),
+                                  '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], capture_output=True, check=True).stdout
+            return raw[0], raw[2]
+        self.assertGreater(red_share(.75)[0], 200)   # 范围内是新画的红色
+        self.assertGreater(red_share(1.5)[1], 200)   # 范围外保留原来的蓝色
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
+    def test_range_adds_the_base_grain_to_new_frames_only(self):
+        output = {'width': 160, 'height': 90, 'fps': 10}
+        target = self.project.root / 'assets/videos/base.mp4'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=gray:s=160x90:r=10:d=2',
+                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(target)], check=True)
+        self.project.register_file(target, 'video', {'type': 'web', 'scene_id': 's01', 'page': 'animation/s01/index.html',
+                                                     'grain': 30}, 'web.s01')
+        session = self.fake_session(png_for_time=lambda t: self.png((128, 128, 128)))
+        with mock.patch.object(web_render, '_Session', session):
+            with self.assertRaises(NTFError) as error:
+                web_render.web_render(self.project, 'animation/s01', scene_id='s01', time_range='0.5-1', grain=10, **output)
+            self.assertEqual(error.exception.code, 'web_render_parameters')
+            result = web_render.web_render(self.project, 'animation/s01', scene_id='s01', time_range='0.5-1', **output)
+        state = json.loads((self.project.root / 'state.json').read_text())
+        self.assertEqual(state['assets'][result['asset_id']]['source']['grain'], 30)
+
+        def spread(at):
+            raw = subprocess.run(['ffmpeg', '-v', 'error', '-ss', str(at), '-i', str(self.project.root / result['path']),
+                                  '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', '-'], capture_output=True, check=True).stdout
+            return max(raw) - min(raw)
+        self.assertGreater(spread(.75), 20)   # 新画的帧补上整片的颗粒
+        self.assertLess(spread(1.5), 8)       # 拼回的旧帧不再叠一层
 
     def test_text_analysis_flags_cut_bleed_overlap_and_tiny_text(self):
         box = lambda text, x0, y0, x1, y1, size=30, **extra: {'text': text, 'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1,

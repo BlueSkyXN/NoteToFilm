@@ -70,6 +70,32 @@ def _value_matches(value, rule: dict) -> bool:
     return True
 
 
+def _suggest_sizes(width, height, rule) -> list[str]:
+    """Nearest sizes that keep the exact aspect ratio and satisfy the rule (one below, one above); falls back to
+    rounding each edge when the ratio cannot be kept."""
+    multiple, edge = rule.get("multiple_of", 1), rule.get("max_edge")
+    low, high = rule.get("min_pixels", 0), rule.get("max_pixels")
+    def fits(w, h):
+        return (w > 0 and h > 0 and not w % multiple and not h % multiple and (not edge or max(w, h) <= edge)
+                and low <= w * h and (high is None or w * h <= high)
+                and ("max_ratio" not in rule or max(w, h) / min(w, h) <= rule["max_ratio"]))
+    g = math.gcd(width, height)
+    rw, rh = width // g, height // g
+    step = math.lcm(multiple // math.gcd(multiple, rw), multiple // math.gcd(multiple, rh))
+    found = []
+    if rw * step <= 4 * 8192:
+        target = width / rw
+        below = math.floor(target / step) * step
+        for m in (below, below + step):
+            if m > 0 and fits(rw * m, rh * m):
+                found.append(f"{rw * m}x{rh * m}")
+    if not found:
+        w, h = max(multiple, round(width / multiple) * multiple), max(multiple, round(height / multiple) * multiple)
+        if fits(w, h):
+            found.append(f"{w}x{h}")
+    return found
+
+
 def _check_custom_size(size, rule) -> None:
     """Apply a route-declared WIDTHxHEIGHT rule (multiple, longest edge, pixel range, aspect ratio)."""
     if not isinstance(rule, dict) or not isinstance(size, str) or size == "auto":
@@ -90,8 +116,10 @@ def _check_custom_size(size, rule) -> None:
     if "max_ratio" in rule and ratio > rule["max_ratio"]:
         problems.append(f"aspect ratio must be within 1:{rule['max_ratio']} and {rule['max_ratio']}:1")
     if problems:
-        raise NTFError("unsupported_parameter", "size is outside the route's custom size rule: " + "; ".join(problems) + ".",
-                       {"size": size, "rule": rule})
+        suggested = _suggest_sizes(width, height, rule) if width > 0 and height > 0 else []
+        hint = f" Try {' or '.join(suggested)}." if suggested else ""
+        raise NTFError("unsupported_parameter", "size is outside the route's custom size rule: " + "; ".join(problems) + "." + hint,
+                       {"size": size, "rule": rule, "suggested_sizes": suggested})
 
 
 def check_request(route: dict, request: dict) -> None:

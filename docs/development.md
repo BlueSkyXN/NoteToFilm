@@ -53,10 +53,12 @@ W=$(mktemp -d)
 mkdir -p "$W/proj/animation"
 cp -R .agents/skills/notetofilm-compose/assets/code-animation "$W/proj/animation/s01"
 .venv/bin/python scripts/ntf.py web-render "$W/proj" --page animation/s01 --scene s01 --preview-time 1 --preview-time 3.5 --text-check
+.venv/bin/python scripts/ntf.py web-render "$W/proj" --page animation/s01 --scene s01 --text-scan 0.25
 .venv/bin/python scripts/ntf.py web-render "$W/proj" --page animation/s01 --scene s01
+.venv/bin/python scripts/ntf.py web-render "$W/proj" --page animation/s01 --scene s01 --range 2-3
 ```
 
-预期：预览返回 `deterministic: true`，文字检查没有问题项；渲染得到 1280×720、30fps、7 秒的无声视频，再次执行返回 `status: reused`。
+预期：预览返回 `deterministic: true`，文字检查没有问题项；整片扫描返回 `text_scanned`、28 次取样、`spans` 为空；渲染得到 1280×720、30fps、7 秒的无声视频，再次执行返回 `status: reused`；`--range 2-3` 返回 `patched`、`frames_rendered: 30`，时长仍是 7 秒。
 
 ## 常见改动
 

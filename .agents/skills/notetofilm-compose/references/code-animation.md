@@ -39,7 +39,7 @@
 
 ## 时间来自项目
 
-先取得配音和 `ntf timing` 结果，再把 `timing.js` 里的关键变化放到对应秒数；旁白改动后同步更新。整片一个页面、字要落在说到它的那个词上时，用 `ntf timing PROJECT --apply --js animation/<页面>/film-timing.js` 导出镜头窗口和逐词时间，页面里写 `W('s05', '通知')`，不手填秒数（示例见骨架的 `film-timing.js`）。段落卡写的开始状态、主要变化和完成状态，就是动画要依次画出的内容。
+先取得配音和 `ntf timing` 结果，再把 `timing.js` 里的关键变化放到对应秒数；旁白改动后同步更新。整片一个页面、字要落在说到它的那个词上时，用 `ntf timing PROJECT --apply --js animation/<页面>/film-timing.js` 导出镜头窗口和逐词时间，页面里写 `W('s05', '通知')`，不手填秒数（示例见骨架的 `film-timing.js`）。配音的词边界常把短语切成几块（“120 个”“取件”“码”），也会把单字并进别的词（“功能”里的“能”）：单个词用 `W`，短语用 `P('s05', '通知顾客')`，它只从词首开始拼。不要另写按包含关系找词的函数，那会让字比旁白早几秒出现，而且不报错。段落卡写的开始状态、主要变化和完成状态，就是动画要依次画出的内容。
 
 参与动画的标签和图解文字在页面源码里维护；不随动画变化的标题和旁白字幕继续用合成清单的 `text_overlays` 和字幕。同一段文字只在一处维护。数字和准确文字注明材料中的事实编号。
 
@@ -55,7 +55,7 @@
 
 人物和物件的动作来自生成视频，准确的字、标注、图解和整屏转场由代码画，整片写成一个页面。骨架里的 [hybrid.html](../assets/code-animation/hybrid.html) 和 [hybrid.js](../assets/code-animation/hybrid.js) 是一个四镜示例：推车上的包裹、横甩到货架、往下穿进图解、取件单掠过后接顾客取件。
 
-1. **时间**：配音后 `ntf timing PROJECT --apply --js animation/film/film-timing.js`。字和动作写在 `W('镜头', '词')` 上。
+1. **时间**：配音后 `ntf timing PROJECT --apply --js animation/film/film-timing.js`。字和动作写在 `W('镜头', '词')` 或 `P('镜头', '短语')` 上。
 2. **片段**：生成并选好片段后，`ntf frames PROJECT --select s05.video --output animation/film/media/s05`，把返回的 `frames`、`fps` 填进 `clipLibrary`。帧按需加载、最近用过的留在缓存里，片段多也不会撑满内存；取不到的帧会让渲染停下，片段到齐再渲。
 3. **镜头表**：`SHOTS` 是 `[开始秒, 绘制函数]`，`render(t, frame)` 里用 `shotAt(SHOTS, t, frame)` 选镜头。它按 `frame.time` 选，开 `--subframes` 时硬切处不混帧。
 4. **叠字对齐素材**：`clips.play()` 返回这一帧的取景，`overlay(取景, () => …)` 里按素材像素画，字贴在素材里的东西上、随推拉一起动。坐标先在原尺寸帧上画网格量出来；只对机位固定的片段直接成立，镜头在动的片段量几个关键帧再插值，或换固定机位的片段。
@@ -100,10 +100,12 @@ ntf web-render PROJECT --page animation/demo/hybrid.html --scene demo --subframe
 ## 预览、渲染与接入
 
 1. 静帧预览：`ntf web-render PROJECT --page animation/s02 --scene s02 --preview-time 1 --preview-time 3.5 --text-check`。预览时刻须在页面时长以内。输出各时刻的 PNG，并在另一页面按不同顺序重画同样的时刻做比对；`deterministic` 为 false 时，按 `nondeterministic` 给出的时刻查找跨帧状态、随机数、实时时钟或晚到的资源。`--text-check` 记录 Canvas 与 DOM/SVG 文字的位置，报告出界（CUT，展示级大字出血记为 BLEED）、两段文字重叠（OVERLAP）和字过小（TINY，下限为画高的 2.5%，720p 约 18px，次要标注也按此），并输出标好框的图；WebGL 纹理和图片里的字看不到，要自己看。
-2. 渲染：去掉 `--preview-time`，逐帧调用 `render(t, frame)`（`frame.time` 是这一帧的名义时刻），按项目画幅和帧率截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）。时长默认读页面的 `window.DUR`，也可用 `--duration` 指定。页面目录内的文件和渲染参数不变时复用已有素材，`--force` 另生成新版本。
+2. 整片文字检查：`ntf web-render PROJECT --page animation/film --scene film --text-scan 0.25`，按 0.25 秒间隔把整片过一遍，一分多钟的片子约一分钟扫完。每次改了镜头运动、推拉幅度或版面，正式渲染前都扫一遍：加运镜最容易把原本好好的字推出画外。`spans` 里只在一次取样出现的，多半是镜头移动途中经过；连续几次都在的，是停住时就有的问题，要改。
+3. 渲染：去掉 `--preview-time`，逐帧调用 `render(t, frame)`（`frame.time` 是这一帧的名义时刻），按项目画幅和帧率截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）。时长默认读页面的 `window.DUR`，也可用 `--duration` 指定。页面目录内的文件和渲染参数不变时复用已有素材，`--force` 另生成新版本。
    质感参数：`--dpr 2` 超采样后缩回项目画幅，细线和小字更干净，渲染约慢 3 倍；`--subframes 4` 每帧平均 4 个子帧得到运动模糊（`--shutter` 调快门比例，默认 0.5），渲染时间乘以子帧数；`--grain 4–8` 在编码时叠加随时间变化的颗粒，不在页面里逐帧画噪点；颗粒会让文件大幅变大，使用前看 [motion-craft.md](motion-craft.md) 第 9 节。
-3. 合成清单按 `{"selection": "web.s02"}` 引用。
-4. 用 `ntf sheet` 检查关键变化的时点，以及文字是否裁切或重叠。
+   试改阶段用 `--subframes 1` 或 `2` 看节奏和构图，定稿再用 4；整支已经渲好、只改了某几秒时，用 `--range 开始-结束` 只重渲那一段并拼回当前采用的整片（几分钟，而不是整支的几十分钟）。改动牵动了时间表、旁白或别处的画面时，整支重渲。
+4. 合成清单按 `{"selection": "web.s02"}` 引用。
+5. 用 `ntf sheet` 检查关键变化的时点，以及文字是否裁切或重叠。
 
 文字检查和 `ntf inspect --scan` 给的是线索，逐条判断，不以清零为目标：
 

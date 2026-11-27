@@ -78,6 +78,7 @@ class HybridKitTests(unittest.TestCase):
         self.assertEqual(b['words'], [['这个', 3.7], ['问题', 4.1]])
         self.assertIsNone(timeline['scenes'][0]['voice'])
         self.assertIn('export function W(id, word, n = 1)', text)
+        self.assertIn('export function P(id, phrase, n = 1)', text)
         with self.assertRaises(NTFError):
             export_timing_js(Project(self.project.root), 'animation/film/timing.txt')
 
@@ -102,6 +103,24 @@ class HybridKitTests(unittest.TestCase):
         self.assertIn('window.render = ', (STARTER / 'hybrid.js').read_text(encoding='utf-8'))
         sample = (STARTER / 'film-timing.js').read_text(encoding='utf-8')
         self.assertIn('export function W(', sample)
+        from notetofilm_local.timing import _TIMING_JS_HELPERS
+        self.assertTrue(sample.endswith(_TIMING_JS_HELPERS), '骨架里的时间表示例要和 timing --js 导出的函数一致')
+
+    def test_phrase_times_start_at_a_word(self):
+        from notetofilm_local.timing import _TIMING_JS_HELPERS
+        module = ('export const TL = {"dur": 4, "scenes": [{"id": "a", "start": 0, "dur": 4, "voice": 0, "words": '
+                  '[["功能", 0.2], ["齐全", 0.6], ["能", 1.0], ["用", 1.2], ["取件", 2.0], ["码", 2.4], ["120 个", 3.0]]}]};\n'
+                  + _TIMING_JS_HELPERS)
+        self.assertIn('joined.startsWith(want)', module)
+        node = shutil.which('node')
+        if not node:   # 没有 Node 时只核对导出的函数；装了 Node 的环境（含 CI）实际运行
+            return
+        script = self.root / 'timing.mjs'
+        script.write_text(module + "\nconst r = [P('a', '能'), P('a', '取件码'), P('a', '120'), P('a', '能用')];\n"
+                          "let missing = ''; try { P('a', '选表'); } catch (e) { missing = 'thrown'; }\n"
+                          "console.log(JSON.stringify([...r, missing]));\n", encoding='utf-8')
+        out = subprocess.run([node, str(script)], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), [1.0, 2.0, 3.0, 1.0, 'thrown'])
 
 
 if __name__ == '__main__':

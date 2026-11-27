@@ -212,6 +212,10 @@ class ProtocolTests(unittest.TestCase):
         for size in ("1000x1000", "3840x1072", "640x640", "4096x2304"):
             with self.subTest(size=size):
                 self.assert_code("unsupported_parameter", lambda: self.sunburst26().submit({"prompt": "x", "parameters": {"size": size}}, self.root))
+        with self.assertRaises(NTFError) as error:
+            self.sunburst26().submit({"prompt": "x", "parameters": {"size": "1920x1080"}}, self.root)
+        self.assertEqual(error.exception.details["suggested_sizes"], ["1792x1008", "2048x1152"])
+        self.assertIn("Try 1792x1008 or 2048x1152", str(error.exception))
 
     def test_mask_edit_is_sent_with_the_references(self):
         from PIL import Image

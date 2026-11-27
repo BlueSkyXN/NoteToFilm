@@ -278,6 +278,25 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(NTFError):
             add_request(self.project, {"kind": "image", "action_id": "generate", "prompt": "duplicate"})
 
+    def test_request_stopped_by_local_checks_can_be_sent_again_under_its_id(self):
+        aid = add_request(self.project, {"kind": "image", "action_id": "g.cover", "prompt": "cover", "output": {"size": "1920x1080"}})
+        with self.project.transaction() as state:
+            state["attempts"]["attempt_local"] = {"id": "attempt_local", "action_id": aid, "status": "failed",
+                                                   "submission_started": False, "outputs": []}
+            state["actions"][aid].update({"status": "failed", "attempts": ["attempt_local"],
+                                          "error": {"code": "unsupported_parameter", "message": "size"}})
+        add_request(self.project, {"kind": "image", "action_id": aid, "prompt": "cover", "output": {"size": "2048x1152"}})
+        action = next(a for a in self.project.plan["actions"] if a["id"] == aid)
+        self.assertEqual(action["request"]["output"]["size"], "2048x1152")
+        record = self.project.state["actions"][aid]
+        self.assertEqual((record["status"], "error" in record, record["attempts"]), ("pending", False, ["attempt_local"]))
+        with self.project.transaction() as state:
+            state["attempts"]["attempt_local"]["submission_started"] = True
+            state["actions"][aid]["status"] = "failed"
+        with self.assertRaises(NTFError) as error:
+            add_request(self.project, {"kind": "image", "action_id": aid, "prompt": "again"})
+        self.assertEqual(error.exception.code, "action_exists")
+
 
 if __name__ == "__main__":
     unittest.main()
