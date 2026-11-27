@@ -38,6 +38,8 @@
 | 看每个剪点前后 | `ntf sheet FILE --output DIR --timeline TIMELINE --cuts --fps 8` |
 | 复看指定时段 | `ntf sheet FILE --output DIR --start 12 --end 16 --fps 8` |
 | 网页动画静帧预览与确定性检查 | `ntf web-render PROJECT --page animation/s02 --scene s02 --preview-time 1 --preview-time 3.5` |
+| 网页动画整片文字检查 | `ntf web-render PROJECT --page animation/film --scene film --text-scan 0.25` |
+| 只重渲网页动画的一段并拼回整片 | `ntf web-render PROJECT --page animation/film --scene film --subframes 4 --range 42-47` |
 | 网页动画渲染为项目素材 | `ntf web-render PROJECT --page animation/s02 --scene s02 [--duration SECONDS]` |
 | 把采用的视频片段抽成页面读取的帧序列 | `ntf frames PROJECT --select s05.video --output animation/film/media/s05 [--fps 24]` |
 | 合成原创配乐与音效 | `ntf score PROJECT --file animation/score.py --select film.background [--stems]` |
@@ -83,7 +85,7 @@ PROJECT 与文件参数都传具体路径。动作 ID 从计划或 `ready` 结�
 
 `sheet` 把视频按时间抽帧排成 JPEG 网格，每格标注该帧的实际源时间；给出 `--timeline` 时同时标注镜头 ID，`sheet.json` 列出每帧对应的字幕。`--cuts` 只取每个剪点或转场前后 `--cut-padding` 秒，`--start/--end` 复看指定时段；单次最多约 600 帧，超出时降低 `--fps` 或缩小时段。输出目录须为空，以保留之前的查看记录。需要 render 依赖中的 Pillow。
 
-`web-render` 打开项目内提供 `window.render(t, frame)` 的页面，按项目画幅和帧率逐帧截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）；时长默认读页面的 `window.DUR`。需要异步加载的入口应先同步设置 `window.READY = false`，再提供 `window.render`，资源就绪后设置为 `true`。入口未声明 READY 时，提供 render 即可截图。`--preview-time` 可重复，只输出静帧，并按另一种渲染顺序比对画面是否只由时间决定；加 `--text-check` 时报告文字出界、重叠和过小并输出标注图，`counts` 按类型计数；整段落在画外的字不报，页面把上下文的 `ntfDecorative` 设为 true 期间画的字不记录（骨架 `kit.js` 的 `decorative()`）。渲染可加 `--dpr`（超采样，1–3）、`--subframes`（子帧运动模糊，1–8，`--shutter` 调快门比例）和 `--grain`（编码时叠加颗粒，0–40）。页面目录内容与参数不变时复用已有素材，`--force` 另生成新版本。需要 Playwright（web 可选依赖）和 Chromium 或本机 Chrome；页面写法在 compose Skill 的代码动画说明。
+`web-render` 打开项目内提供 `window.render(t, frame)` 的页面，按项目画幅和帧率逐帧截图并编码为无声视频，登记后采用到 `web.<scene>`（`--select` 可改）；时长默认读页面的 `window.DUR`。需要异步加载的入口应先同步设置 `window.READY = false`，再提供 `window.render`，资源就绪后设置为 `true`。入口未声明 READY 时，提供 render 即可截图。`--preview-time` 可重复，只输出静帧，并按另一种渲染顺序比对画面是否只由时间决定；加 `--text-check` 时报告文字出界、重叠和过小并输出标注图，`counts` 按类型计数；整段落在画外的字不报，页面把上下文的 `ntfDecorative` 设为 true 期间画的字不记录（骨架 `kit.js` 的 `decorative()`）。`--text-scan 间隔秒数` 按间隔对整片做同样的检查（加 `--range 开始-结束` 只扫一段），不出静帧，只给每处问题第一次出现时的标注图；同一处问题在相邻取样里接连出现时并成一个区间，`spans` 列出类型、文字、起止秒数和取样次数：只在一次取样里出现的多半是镜头移动途中经过，连续几次都在的是停住时就有的问题。渲染可加 `--dpr`（超采样，1–3）、`--subframes`（子帧运动模糊，1–8，`--shutter` 调快门比例）和 `--grain`（编码时叠加颗粒，0–40）。页面目录内容与参数不变时复用已有素材，`--force` 另生成新版本。不配 `--preview-time` 或 `--text-scan` 时，`--range 开始-结束` 只重渲这一段的帧，其余帧从当前采用位（`web.<scene>` 或 `--select`）里同一页面的整片解码，一起重新编码成新素材并采用，返回 `patched`、`frames_rendered` 和 `base_asset_id`；画幅或时长与那支整片不一致（旁白或时间表改过）时拒绝，要整支重渲。整片渲染时加过 `--grain` 的，局部重渲只给新渲的帧补上同样的颗粒，命令里不另加 `--grain`。需要 Playwright（web 可选依赖）和 Chromium 或本机 Chrome；页面写法在 compose Skill 的代码动画说明。
 
 `inspect --scan` 报告冻结（默认至少 1 秒，可用 `--freeze-seconds` 调整）、黑场和低电平停顿（低于 −35 dBFS，默认至少 0.5 秒，可用 `--silence-seconds` 调整）。`low_motion` 列出画面几乎不动的区间：画面缩到 64×36 灰度、每秒 10 帧，相邻两帧平均像素差的 0.5 秒滑动中位数低于 `--low-motion-level`（默认 1.2，0–255）、连续至少 `--low-motion-seconds`（默认 1.5 秒），剪点处断开；安静的观察片、长停留的落版可以放宽秒数；字幕和标签在变、人物和镜头不动时，冻结扫描不报，这里会报。`pace` 给出剪点时刻（场景变化分数高于 0.3，0.4 秒内的并为一次）、镜头数、每分钟切换次数、中位镜长、最长镜头和低运动占比。剪点只算整屏突变：甩镜、穿越、遮挡这类连续转场和一镜到底的长页面不算剪点，会显出很长的“镜头”，这时看 `low_motion` 判断画面是否在动。加 `--timeline` 可定位镜头。每段停顿的 `near_silence_seconds` 累计连续至少 0.2 秒低于 −70 dBFS 的时间，`digital_silence_seconds` 累计解码后所有声道连续至少 1 毫秒样本为零的时间。按区间复听，结合设计判断停顿是否自然。`--hold START-END` 可重复，声明有意停留（落版、读字、静态证据），落在其中（前后放宽 0.35 秒）的冻结和低运动区间标 `intended: true`。黑场区间附 `bright_pixel_share`（中间一帧亮度超过 25% 的像素占比）和 `has_content`：深色底上有字或图形时为 true，看原帧判断，不必为此改底色。
 
@@ -99,7 +101,7 @@ PROJECT 与文件参数都传具体路径。动作 ID 从计划或 `ready` 结�
 
 `install-info --require-audio --require-render --font-file FONT`可检查实际入口的依赖与字体可读性，失败同样返回非零退出码。字体内容、画面语义和叙事效果仍需审阅。
 
-`timing --js FILE` 把正式分镜的镜头窗口（`planned_window`，先 `--apply`）和所采用配音的词边界写成项目内的 ES 模块：`TL`（`dur` 与各镜 `id`、`start`、`dur`、`voice`、`words`，秒从片头算起）、`DUR`、`SC` 和 `W(id, word, n)`（某镜第 n 次说到 word 的时刻）。页面里的字和动作落在 `W('s05', '通知')` 这样的时刻上；改旁白或重新 `--apply` 后重新导出。词边界缺失的镜头列在 `scenes_without_words`，那几镜用 `SC[id].voice` 加秒数。
+`timing --js FILE` 把正式分镜的镜头窗口（`planned_window`，先 `--apply`）和所采用配音的词边界写成项目内的 ES 模块：`TL`（`dur` 与各镜 `id`、`start`、`dur`、`voice`、`words`，秒从片头算起）、`DUR`、`SC`、`W(id, word, n)`（某镜第 n 次说到 word 这个词的时刻，逐字相同）和 `P(id, phrase, n)`（某镜第 n 次说到短语的时刻：从某个词的开头起，连续几个词拼起来以它开头，忽略空格和标点；词边界常把一句话切成“120 个”“取件”“码”这样的块，用 P 才落得准，“能”也不会落在“功能”上；找不到时两者都报错）。页面里的字和动作落在 `W('s05', '通知')` 或 `P('s05', '通知顾客')` 这样的时刻上，不要自己写按包含关系找词的函数；改旁白或重新 `--apply` 后重新导出。词边界缺失的镜头列在 `scenes_without_words`，那几镜用 `SC[id].voice` 加秒数。
 
 `frames` 把一个采用位（`--select`）或素材（`--asset`）的视频按 `--fps`（默认 24）抽成 `000.jpg` 起编号的 JPEG，默认缩放到项目画幅，写进项目内的空目录；已有帧时加 `--force` 替换。返回的 `frames` 和 `fps` 填进代码动画骨架 `clips.js` 的片段库，页面按 `floor(秒 × fps)` 取帧。
 

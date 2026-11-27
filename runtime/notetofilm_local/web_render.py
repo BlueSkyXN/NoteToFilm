@@ -125,6 +125,58 @@ def _average(images):
     return out.getvalue()
 
 
+def _parse_range(value):
+    """'START-END' in seconds → (start, end)."""
+    if value is None:
+        return None
+    try:
+        start, end = (float(v) for v in str(value).split('-', 1))
+    except ValueError:
+        raise NTFError('web_render_parameters', f'--range 写成 开始-结束 的秒数，例如 12.5-18：{value}') from None
+    if not (math.isfinite(start) and math.isfinite(end)) or start < 0 or end <= start:
+        raise NTFError('web_render_parameters', f'--range 的结束须晚于开始：{value}')
+    return start, end
+
+
+def _merge_spans(hits, step):
+    """(type, text) → sample times; consecutive samples (gap ≤ 1.5 steps) become one span."""
+    spans = []
+    for (kind, text), samples in hits.items():
+        current = None
+        for t, box, marked in samples:
+            if current and t - current['end_seconds'] <= step * 1.5 + 1e-9:
+                current['end_seconds'] = t
+                current['samples'] += 1
+                continue
+            current = {'type': kind, 'text': text, 'start_seconds': t, 'end_seconds': t, 'samples': 1, 'box': box}
+            if marked:
+                current['marked_path'] = marked
+            spans.append(current)
+    spans.sort(key=lambda item: (item['start_seconds'], item['type'], item['text']))
+    return spans
+
+
+def _read_exact(stream, size):
+    chunks, remaining = [], size
+    while remaining:
+        chunk = stream.read(remaining)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b''.join(chunks)
+
+
+def _rgb(png, size):
+    from PIL import Image
+    import io
+    with Image.open(io.BytesIO(png)) as image:
+        frame = image.convert('RGB')
+        if frame.size != size:
+            frame = frame.resize(size, Image.LANCZOS)
+        return frame.tobytes()
+
+
 def _page(project, page):
     path = Path(page).expanduser()
     path = (path if path.is_absolute() else project.root / path).resolve()
@@ -213,9 +265,21 @@ class _Session:
         if self.errors:
             raise NTFError('web_page_error', '页面运行出错或缺少资源；修正后重试。', {'errors': self.errors[-6:]})
 
-    def frame(self, page, t, frame_time=None):
-        page.evaluate(RENDER, [t, self.frame_info(t if frame_time is None else frame_time)])
+    def evaluate(self, page, script, t, frame_time=None):
+        """Run render(t, frame) in the page; a rejected promise (a missing clip frame, a script error) becomes a
+        project error that names the time instead of a browser traceback."""
+        try:
+            result = page.evaluate(script, [t, self.frame_info(t if frame_time is None else frame_time)])
+        except NTFError:
+            raise
+        except Exception as exc:
+            raise NTFError('web_page_error', '页面画这一帧时出错（常见于片段帧或图片取不到、脚本报错）；修正后重试。',
+                           {'time_seconds': t, 'detail': str(exc).splitlines()[0][:200], 'errors': self.errors[-6:]}) from None
         self.check()
+        return result
+
+    def frame(self, page, t, frame_time=None):
+        self.evaluate(page, RENDER, t, frame_time)
         return page.screenshot(type='png', clip={'x': 0, 'y': 0, **self.size}, caret='hide')
 
     def frame_info(self, time):
@@ -231,7 +295,8 @@ class _Session:
 
 
 def web_render(project, page, *, scene_id, duration=None, select=None, fps=None, width=None, height=None,
-               preview_times=None, force=False, dpr=1, subframes=1, shutter=.5, grain=0, text_check=False):
+               preview_times=None, force=False, dpr=1, subframes=1, shutter=.5, grain=0, text_check=False,
+               text_scan=None, time_range=None):
     scene_id = check_id(scene_id, 'scene ID')
     slot = check_id(select or f'web.{scene_id}', 'selection slot')
     page = _page(project, page)
@@ -248,8 +313,18 @@ def web_render(project, page, *, scene_id, duration=None, select=None, fps=None,
             or not isinstance(grain, (int, float)) or not 0 <= grain <= 40):
         raise NTFError('web_render_parameters', '--dpr 取 1–3，--subframes 取 1–8，--shutter 取 (0, 1]，--grain 取 0–40。')
     if text_check and not preview_times:
-        raise NTFError('web_render_parameters', '--text-check 与 --preview-time 一起使用，检查指定时刻的文字。')
-    session = _Session(project, page, settings, duration, dpr=dpr, text_check=text_check)
+        raise NTFError('web_render_parameters', '--text-check 与 --preview-time 一起使用，检查指定时刻的文字；整段检查用 --text-scan。')
+    time_range = _parse_range(time_range)
+    if text_scan is not None:
+        if preview_times:
+            raise NTFError('web_render_parameters', '--text-scan 自己按间隔取样，不和 --preview-time 一起用。')
+        if isinstance(text_scan, bool) or not isinstance(text_scan, (int, float)) or not .04 <= text_scan <= 10:
+            raise NTFError('web_render_parameters', '--text-scan 是取样间隔秒数，取 0.04–10，常用 0.25。')
+    elif time_range and preview_times:
+        raise NTFError('web_render_parameters', '--range 用于 --text-scan 或局部重渲，不和 --preview-time 一起用。')
+    if time_range and text_scan is None and grain:
+        raise NTFError('web_render_parameters', '局部重渲沿用整片渲染时的颗粒设置，不另加 --grain；要换颗粒时整支渲染。')
+    session = _Session(project, page, settings, duration, dpr=dpr, text_check=text_check or text_scan is not None)
     job = project.root / 'work' / ('web_' + uuid.uuid4().hex[:12])
     try:
         view = session.open()
@@ -262,6 +337,13 @@ def web_render(project, page, *, scene_id, duration=None, select=None, fps=None,
         base = {'scene_id': scene_id, 'page': page.relative_to(project.root.resolve()).as_posix(),
                 'duration_seconds': window, 'frames': frames, 'selection_slot': slot, 'browser': session.engine,
                 **{k: settings[k] for k in ('width', 'height', 'fps')}}
+        if time_range and time_range[0] >= window:
+            raise NTFError('web_render_parameters', '--range 须落在动画时长之内。', {'duration_seconds': window})
+        if text_scan is not None:
+            return _text_scan(project, session, view, job, base, settings, window, text_scan, time_range, dpr)
+        if time_range:
+            return _patch(project, session, view, job, base, settings, window, time_range, slot, scene_id,
+                          options, subframes, shutter, dpr)
         if preview_times:
             if any(t >= window for t in preview_times):
                 raise NTFError('web_render_parameters', '--preview-time 须位于动画时长之内。', {'duration_seconds': window})
@@ -269,8 +351,7 @@ def web_render(project, page, *, scene_id, duration=None, select=None, fps=None,
             stills, mismatched, text_report = [], [], []
             for t in preview_times:
                 if text_check:
-                    boxes = view.evaluate(RENDER_AND_COLLECT, [t, session.frame_info(t)])
-                    session.check()
+                    boxes = session.evaluate(view, RENDER_AND_COLLECT, t)
                     image = view.screenshot(type='png', clip={'x': 0, 'y': 0, **session.size}, caret='hide')
                 else:
                     image = session.frame(view, t)
@@ -345,8 +426,119 @@ def web_render(project, page, *, scene_id, duration=None, select=None, fps=None,
         destination.parent.mkdir(parents=True, exist_ok=True)
         partial_file.replace(destination)
         asset = project.register_file(destination, 'video', {'type': 'web', 'scene_id': scene_id, 'page': base['page'],
-                                                             'fingerprint': fingerprint}, slot)
+                                                             'fingerprint': fingerprint, **({'grain': grain} if grain else {})}, slot)
         atomic_json(job / 'render.json', {**base, 'asset_id': asset['id'], 'fingerprint': fingerprint})
         return {'status': 'rendered', **base, **options, 'asset_id': asset['id'], 'path': asset['path']}
     finally:
         session.close()
+
+
+def _text_scan(project, session, view, job, base, settings, window, step, time_range, dpr):
+    """Text check at a fixed interval over the film (or a range); issues at consecutive samples merge into spans.
+    A span seen at one sample is usually a camera move passing through; one held over several samples is on screen."""
+    start, end = time_range or (0.0, window)
+    end = min(end, window)
+    times, t = [], start
+    while t < end - 1e-9:
+        times.append(round(t, 3))
+        t += step
+    job.mkdir(parents=True)
+    hits, open_keys, marked_count = {}, set(), 0
+    for t in times:
+        boxes = session.evaluate(view, RENDER_AND_COLLECT, t)
+        issues = analyze_text(boxes, settings['width'], settings['height'])
+        keys = set()
+        fresh = []
+        for issue in issues:
+            text = ' / '.join(issue['text']) if isinstance(issue['text'], list) else issue['text']
+            key = (issue['type'], text)
+            if key in keys:
+                continue
+            keys.add(key)
+            if key not in open_keys:
+                fresh.append((key, issue))
+            hits.setdefault(key, []).append([t, issue['box'], None])
+        if fresh and marked_count < 60:
+            image = view.screenshot(type='png', clip={'x': 0, 'y': 0, **session.size}, caret='hide')
+            marked = _mark_issues(image, [issue for _, issue in fresh], dpr, job / f'text_{t:.3f}s.png')
+            if marked:
+                marked_count += 1
+                for key, _ in fresh:
+                    hits[key][-1][2] = marked.relative_to(project.root).as_posix()
+        open_keys = keys
+    spans = _merge_spans(hits, step)
+    counts = {}
+    for span in spans:
+        counts[span['type']] = counts.get(span['type'], 0) + 1
+    return {'status': 'text_scanned', **base, 'step_seconds': step, 'range': [start, end], 'samples': len(times),
+            'spans': spans, 'counts': counts}
+
+
+def _patch(project, session, view, job, base, settings, window, time_range, slot, scene_id, options, subframes, shutter, dpr):
+    """Re-render only the frames inside time_range and splice them into the video adopted at the slot.
+    Frames outside the range are decoded from that video and encoded again with the new ones; grain the base was
+    rendered with is added to the new frames only, since the decoded ones already carry it."""
+    selected = project.state.get('selection', {}).get(slot)
+    selected = selected[0] if isinstance(selected, list) and selected else selected
+    asset = project.state['assets'].get(selected) if isinstance(selected, str) else None
+    if not asset or asset.get('source', {}).get('type') != 'web' or asset.get('source', {}).get('page') != base['page']:
+        raise NTFError('web_patch_base', '局部重渲要拼回同一页面已采用的整片；先整支渲染一次，或用 --select 指向它。',
+                       {'selection_slot': slot})
+    source = project.path(asset['path'])
+    meta = probe(source)
+    fps = settings['fps']
+    if (meta.get('width'), meta.get('height')) != (settings['width'], settings['height']) \
+            or abs(meta['duration_seconds'] - window) > 1.1 / fps:
+        raise NTFError('web_patch_base', '已采用的整片和这次的画幅或时长不一致（旁白或时间表改过）；整支重新渲染。',
+                       {'base': {k: meta.get(k) for k in ('width', 'height', 'duration_seconds')}, 'expected_duration': window})
+    frames = base['frames']
+    first = max(0, math.ceil(time_range[0] * fps - 1e-8))
+    last = min(frames, math.ceil(min(time_range[1], window) * fps - 1e-8))
+    grain = asset['source'].get('grain', 0)
+    filters = ['-vf', f"noise=alls={grain:g}:allf=t:enable='between(n,{first},{last - 1})'"] if grain and last > first else []
+    size = (settings['width'], settings['height'])
+    frame_bytes = size[0] * size[1] * 3
+    job.mkdir(parents=True)
+    partial_file = job / 'render.mp4'
+    decoder = subprocess.Popen(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', str(source),
+                                '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    encoder = subprocess.Popen(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+                                '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{size[0]}x{size[1]}',
+                                '-framerate', settings['fps_expression'], '-i', '-', '-an'] + filters +
+                               ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '16', '-preset', 'medium',
+                                '-movflags', '+faststart', str(partial_file)], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        for index in range(frames):
+            old = _read_exact(decoder.stdout, frame_bytes)
+            if len(old) != frame_bytes:
+                raise NTFError('web_patch_base', '已采用的整片帧数不够，无法局部替换；整支重新渲染。', {'frame': index})
+            if first <= index < last:
+                t = index / fps
+                samples = [min(max(0.0, t + ((k + .5) / subframes - .5) * shutter / fps), window - 1e-6)
+                           for k in range(subframes)] if subframes > 1 else [t]
+                old = _rgb(_average([session.frame(view, sample, t) for sample in samples]), size)
+            encoder.stdin.write(old)
+        encoder.stdin.close()
+        stderr = encoder.stderr.read().decode(errors='replace')
+        if encoder.wait(timeout=600):
+            raise NTFError('media_command_failed', '动画帧编码失败。', {'stderr': stderr[-3000:]})
+    finally:
+        for process in (decoder, encoder):
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream and not stream.closed:
+                    stream.close()
+    metadata = probe(partial_file)
+    if metadata.get('has_audio') or abs(metadata['duration_seconds'] - window) > 1.1 / fps:
+        raise NTFError('web_render_mismatch', '导出视频与计划时长不符。', {'expected': window, 'actual': metadata['duration_seconds']})
+    destination = project.root / 'assets/videos' / ('web_' + uuid.uuid4().hex[:16] + '.mp4')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    partial_file.replace(destination)
+    registered = project.register_file(destination, 'video', {'type': 'web', 'scene_id': scene_id, 'page': base['page'],
+                                                              'patch_of': asset['id'], 'range': list(time_range),
+                                                              **({'grain': grain} if grain else {})}, slot)
+    atomic_json(job / 'render.json', {**base, 'asset_id': registered['id'], 'patch_of': asset['id'], 'range': list(time_range)})
+    return {'status': 'patched', **base, **options, 'range': list(time_range), 'frames_rendered': last - first,
+            'base_asset_id': asset['id'], 'asset_id': registered['id'], 'path': registered['path']}

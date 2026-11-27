@@ -143,6 +143,9 @@ def parser():
     web.add_argument('--shutter', type=float, default=.5, help='子帧覆盖的快门比例 (0, 1]，默认 0.5')
     web.add_argument('--grain', type=float, default=0, help='编码时叠加的颗粒强度 0–40')
     web.add_argument('--text-check', action='store_true', help='预览时检查文字出界、重叠和过小')
+    web.add_argument('--text-scan', type=float, metavar='SECONDS', help='按间隔对整片（或 --range）做文字检查，连续时刻并成区间')
+    web.add_argument('--range', dest='time_range', metavar='START-END',
+                     help='配 --text-scan 时只扫这一段；单独用时只重渲这一段，拼回当前采用的整片')
     score = commands.add_parser('score', help='运行配乐脚本，合成原创配乐与音效并登记为项目音频')
     score.add_argument('project')
     score.add_argument('--file', required=True, help='项目内的 .py 配乐脚本，定义 DUR 与 score(S)')
@@ -260,9 +263,24 @@ def add_request(project, payload):
         if name in request:
             action[name] = request.pop(name)
     plan = project.plan
-    if any(a["id"] == aid for a in plan["actions"]):
-        raise NTFError("action_exists", "Action already exists. Edit its plan and use ntf run --action; use --force for an intentional new version.")
-    plan["actions"].append(action)
+    index = next((i for i, a in enumerate(plan["actions"]) if a["id"] == aid), None)
+    if index is not None:
+        # A request that failed local checks (an invalid size, say) never reached the provider: the same ID can be
+        # requested again with the fix. Anything sent, still planned or with results keeps its record.
+        record = project.state["actions"].get(aid, {})
+        attempts = [project.state["attempts"].get(t, {}) for t in record.get("attempts", [])]
+        never_sent = (record.get("status") == "failed" and attempts and not record.get("outputs")
+                      and not any(a.get("submission_started") or a.get("job") for a in attempts))
+        if not never_sent:
+            raise NTFError("action_exists", "Action already exists. Edit its plan and use ntf run --action; use --force for an intentional new version.")
+        plan["actions"][index] = action
+        with project.transaction() as state:
+            entry = state["actions"].setdefault(aid, {"attempts": [], "outputs": []})
+            entry["status"] = "pending"
+            for key in ("error", "blocked_reason"):
+                entry.pop(key, None)
+    else:
+        plan["actions"].append(action)
     save_plan(project, plan)
     return aid
 
@@ -471,7 +489,7 @@ def dispatch(args):
                           fps=args.fps, width=args.width, height=args.height,
                           preview_times=args.preview_times, force=args.force, dpr=args.dpr,
                           subframes=args.subframes, shutter=args.shutter, grain=args.grain,
-                          text_check=args.text_check)
+                          text_check=args.text_check, text_scan=args.text_scan, time_range=args.time_range)
     if args.command == 'score':
         from .synth import score_project
         return score_project(project, args.file, select=args.select, duration=args.duration, stems=args.stems, force=args.force)

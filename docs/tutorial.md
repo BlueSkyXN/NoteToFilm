@@ -26,17 +26,18 @@ ntf install-info --require-audio --require-render
    ntf timing demo --js animation/film/film-timing.js
    ```
 
-2. 把 compose Skill 的代码动画骨架（`assets/code-animation/`）复制到 `demo/animation/film/`。只有图形时从 `index.html` 改起；要和视频片段同屏时用 `hybrid.html`（第 3 节）。字和动作写在 `W('镜头', '词')` 上，落在说到它的那一刻。
+2. 把 compose Skill 的代码动画骨架（`assets/code-animation/`）复制到 `demo/animation/film/`。只有图形时从 `index.html` 改起；要和视频片段同屏时用 `hybrid.html`（第 3 节）。字和动作写在 `W('镜头', '词')`（单个词）或 `P('镜头', '短语')` 上，落在说到它的那一刻。
 3. 渲染、合成、检查：
 
    ```bash
+   ntf web-render demo --page animation/film --scene film --text-scan 0.25   # 先扫一遍出界、重叠和过小的字
    ntf web-render demo --page animation/film --scene film --subframes 4
    ntf plan demo && ntf run demo --kind compose
    ntf inspect FILM --scan --timeline TIMELINE
    ntf sheet FILM --output review/sheet --timeline TIMELINE
    ```
 
-   合成清单的写法见 compose Skill；`FILM`、`TIMELINE` 是合成返回的成片和时间表。
+   合成清单的写法见 compose Skill；`FILM`、`TIMELINE` 是合成返回的成片和时间表。之后只改了某几秒，用 `--range 开始-结束` 只重渲那一段，拼回已采用的整片。
 
 ## 3. 加入视频生成（会产生费用）
 

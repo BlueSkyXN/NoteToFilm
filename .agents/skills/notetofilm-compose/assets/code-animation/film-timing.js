@@ -14,3 +14,16 @@ export function W(id, word, n = 1) {
   if (hits.length < n) throw new Error(`${id} 里没有第 ${n} 个“${word}”`);
   return hits[n - 1][1];
 }
+const _bare = s => String(s).replace(/[\s，。、：；！？“”‘’（）《》,.:;!?"'()\-—·]/g, '');
+/** 某镜第 n 次说到短语 phrase 的时刻：从某个词的开头起，连续几个词拼起来以 phrase 开头（忽略空格和标点）。
+ *  “取件码”能落在“取件”“码”两个词上，“120”能落在“120 个”上；“能”不会落在“功能”上。找不到就报错。 */
+export function P(id, phrase, n = 1) {
+  const words = SC[id]?.words || [], want = _bare(phrase);
+  let seen = 0;
+  for (let i = 0; i < words.length && want; i++) {
+    let joined = '';
+    for (let j = i; j < words.length && joined.length < want.length; j++) joined += _bare(words[j][0]);
+    if (_bare(words[i][0]) && joined.startsWith(want) && ++seen === n) return words[i][1];
+  }
+  throw new Error(`${id} 里没有第 ${n} 处从词首开始的“${phrase}”`);
+}
